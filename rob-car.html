@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SmartCar — Mission Control</title>
+
+<!-- CDNs -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<link  href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+
+<script>
+tailwind.config={darkMode:'class',theme:{extend:{colors:{brand:'#00d4ff',surface:'#0d1117',panel:'#161b22',edge:'#21262d'},fontFamily:{mono:['"Share Tech Mono"','monospace']}}}};
+</script>
+
+<style>
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;padding:0;overflow:hidden}
+body{background:#0d1117;color:#c9d1d9;font-family:'Share Tech Mono',monospace;display:flex;flex-direction:column}
+
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#0d1117}
+::-webkit-scrollbar-thumb{background:#21262d;border-radius:3px}
+
+/* ── Glow ── */
+.glow      {text-shadow:0 0 10px #00d4ff99}
+.glow-card {box-shadow:0 0 18px #00d4ff14,inset 0 0 10px #00d4ff08}
+.panel     {background:#161b22;border:1px solid #21262d;border-radius:12px}
+
+/* ── Status dot ── */
+#status-dot{width:11px;height:11px;border-radius:50%;background:#ff4444;display:inline-block;transition:background .3s,box-shadow .3s}
+#status-dot.connected{background:#00ff88;box-shadow:0 0 8px #00ff88}
+#status-dot.connecting{background:#ffaa00;animation:blink .8s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* ── Side nav ── */
+#sidenav{width:56px;min-height:0;transition:width .25s}
+#sidenav.expanded{width:200px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;cursor:pointer;white-space:nowrap;overflow:hidden;color:#8b949e;transition:background .15s,color .15s}
+.nav-item:hover,.nav-item.active{background:#21262d;color:#00d4ff}
+.nav-label{opacity:0;transition:opacity .2s}
+#sidenav.expanded .nav-label{opacity:1}
+
+/* ── Pages — display is set via JS inline style to avoid
+   specificity conflicts with Tailwind grid/flex classes ── */
+.page{display:none}
+
+/* ── Mode buttons ── */
+.mode-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:.72rem;letter-spacing:.06em;font-weight:700;cursor:pointer;border:2px solid transparent;transition:all .2s;text-transform:uppercase}
+.mode-btn.manual   {border-color:#f97316;color:#f97316}
+.mode-btn.auto     {border-color:#3b82f6;color:#3b82f6}
+.mode-btn.ai       {border-color:#eab308;color:#eab308}
+.mode-btn.manual.active  {background:#f9731622}
+.mode-btn.auto.active    {background:#3b82f622}
+.mode-btn.ai.active      {background:#eab30822}
+
+/* ── Toggle switch ── */
+.tog-wrap{position:relative;width:36px;height:20px;flex-shrink:0}
+.tog-wrap input{opacity:0;width:0;height:0;position:absolute}
+.tog-slider{position:absolute;inset:0;background:#21262d;border-radius:20px;cursor:pointer;transition:background .2s}
+.tog-slider:before{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:#8b949e;border-radius:50%;transition:.2s}
+.tog-wrap input:checked+.tog-slider{background:#00d4ff33;border:1px solid #00d4ff}
+.tog-wrap input:checked+.tog-slider:before{transform:translateX(16px);background:#00d4ff}
+
+/* ── Battery bar ── */
+#battery-bar{height:7px;border-radius:4px;background:linear-gradient(90deg,#00d4ff,#00ff88);transition:width .5s}
+#battery-bar.low{background:linear-gradient(90deg,#ff6b35,#ff3c3c)}
+
+/* ── Compass ── */
+#compass-wrap{position:relative;width:96px;height:96px;border-radius:50%;border:2px solid #21262d;background:radial-gradient(circle,#161b22,#0d1117);margin:0 auto}
+#compass-needle{width:4px;height:44px;background:linear-gradient(to bottom,#ff4444 50%,#00d4ff 50%);border-radius:2px;position:absolute;left:50%;top:50%;transform-origin:bottom center;transform:translateX(-50%) translateY(-100%) rotate(0deg);transition:transform .4s ease}
+
+/* ── Radar ── */
+#radar-canvas{display:block;margin:0 auto}
+
+/* ── 3D canvas wrapper: overflow-hidden prevents renderer bleed ── */
+#car3d-wrap{position:relative;overflow:hidden;border-radius:10px;background:#060a10;line-height:0}
+#car3d-canvas{width:100%;height:260px;display:block;cursor:grab}
+#car3d-canvas:active{cursor:grabbing}
+
+/* ── ToF overlays ── */
+.tof-overlay{position:absolute;background:#0d1117cc;border:1px solid #21262d;border-radius:6px;padding:3px 7px;font-size:.72rem;color:#00d4ff;text-shadow:0 0 6px #00d4ff66;pointer-events:none;white-space:nowrap;transition:color .3s,border-color .3s}
+.tof-overlay.danger{color:#ff4444;border-color:#ff4444;text-shadow:0 0 6px #ff4444}
+
+/* ── Joystick zone ── */
+#joystick-zone{width:170px;height:170px;border-radius:50%;background:rgba(0,212,255,.05);border:2px solid #21262d;position:relative;margin:0 auto;transition:background .3s,border-color .3s}
+#joystick-zone.rc-active{background:rgba(255,60,60,.15)!important;border-color:#ff3c3c!important}
+#rc-label{display:none;color:#ff4444;font-size:.68rem;letter-spacing:.1em;text-align:center;margin-top:5px;text-shadow:0 0 6px #ff4444;animation:blink 1s infinite}
+#rc-label.visible{display:block}
+
+/* ── WS Log ── */
+#ws-log{height:70px;overflow-y:auto;font-size:.6rem;color:#8b949e;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:5px 8px}
+#ws-log p{margin:0;line-height:1.7}
+#ws-log p.err{color:#ff6b6b}
+#ws-log p.ok{color:#00ff88}
+#ws-log p.info{color:#00d4ff}
+
+/* ── Action bar ── */
+#action-bar{position:fixed;bottom:16px;right:16px;display:flex;gap:8px;z-index:100}
+
+/* ── AI Config page ── */
+.cfg-input{width:100%;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 12px;color:#c9d1d9;font-family:'Share Tech Mono',monospace;font-size:.82rem;outline:none;transition:border-color .2s}
+.cfg-input:focus{border-color:#00d4ff;box-shadow:0 0 0 2px #00d4ff22}
+
+/* ── Gemini text ── */
+#gemini-text{min-height:60px;white-space:pre-wrap;word-break:break-word}
+
+/* ── AI Image ── */
+#ai-image{width:100%;max-height:200px;object-fit:cover;border-radius:8px;border:1px solid #21262d;background:#0d1117}
+
+/* ── Tof mini card ── */
+.tof-mini{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tof-mini .val{font-size:1.25rem;font-weight:bold;color:#00d4ff;text-shadow:0 0 5px #00d4ff55}
+.tof-mini .val.danger{color:#ff4444;text-shadow:0 0 5px #ff4444}
+.tof-mini .lbl{font-size:.58rem;color:#8b949e;letter-spacing:.1em;text-transform:uppercase}
+
+/* ── Slider ── */
+input[type=range]{accent-color:#00d4ff}
+
+/* ── Autonomous path canvas ── */
+#path-canvas{display:block;width:100%;border-radius:8px;background:#060a10;border:1px solid #21262d}
+
+/* ── Notification toast ── */
+#toast{position:fixed;top:54px;right:16px;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:10px 16px;font-size:.75rem;color:#c9d1d9;z-index:600;transform:translateX(130%);transition:transform .3s;max-width:280px;pointer-events:none}
+#toast.show{transform:translateX(0)}
+#toast.toast-ok{border-color:#00ff88;color:#00ff88}
+#toast.toast-err{border-color:#ff4444;color:#ff4444}
+
+/* ══════════════════════════════════════
+   CONFIG SLIDE-OVER — lives outside page
+   flow; never causes layout reflow.
+══════════════════════════════════════ */
+#config-backdrop{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,0);
+  backdrop-filter:blur(0px);
+  z-index:490;
+  pointer-events:none;
+  transition:background .3s,backdrop-filter .3s;
+}
+#config-backdrop.open{
+  background:rgba(0,0,0,.55);
+  backdrop-filter:blur(2px);
+  pointer-events:auto;
+}
+#config-panel{
+  position:fixed;top:0;right:0;
+  width:min(440px,100vw);height:100vh;
+  background:#0d1117;
+  border-left:1px solid #21262d;
+  z-index:500;
+  transform:translateX(100%);
+  transition:transform .3s cubic-bezier(.4,0,.2,1);
+  overflow-y:auto;overflow-x:hidden;
+  display:flex;flex-direction:column;
+  box-shadow:-8px 0 40px rgba(0,0,0,.6);
+}
+#config-panel.open{transform:translateX(0)}
+.cfg-section{padding:20px 24px;border-bottom:1px solid #21262d}
+.cfg-section:last-child{border-bottom:none}
+.cfg-select-wrap{position:relative}
+.cfg-select-wrap::after{
+  content:'\f0d7';font-family:'Font Awesome 6 Free';font-weight:900;
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);
+  color:#00d4ff;pointer-events:none;font-size:.75rem
+}
+select.cfg-input{padding-right:32px;background-image:none;cursor:pointer;appearance:none;-webkit-appearance:none}
+select.cfg-input option{background:#161b22;color:#c9d1d9}
+.tof-mini .val.inactive{color:#8b949e;text-shadow:none}
+</style>
+</head>
+
+<body>
+
+<!-- ═══════════ TOAST ═══════════ -->
+<div id="toast"></div>
+
+<!-- ═══════════ TOP BAR ═══════════ -->
+<header id="topbar" class="flex-shrink-0 bg-[#0d1117] border-b border-[#21262d] px-4 py-2 flex flex-wrap items-center gap-3 z-40">
+  <!-- hamburger / logo -->
+  <button onclick="toggleNav()" class="text-[#8b949e] hover:text-[#00d4ff] text-lg mr-1 transition-colors">
+    <i class="fa-solid fa-bars"></i>
+  </button>
+  <i class="fa-solid fa-robot text-[#00d4ff] text-xl glow"></i>
+  <span class="text-[#00d4ff] font-bold tracking-widest glow text-base">SMARTCAR</span>
+  <span class="text-[#8b949e] text-[10px] tracking-widest hidden sm:inline">MISSION CONTROL</span>
+
+  <!-- IP -->
+  <div class="flex items-center gap-2 flex-1 min-w-[170px] max-w-xs ml-3">
+    <label class="text-[#8b949e] text-xs whitespace-nowrap">WS:</label>
+    <input id="ip-input" type="text" value="192.168.4.1" placeholder="IP Address"
+      class="flex-1 bg-[#161b22] border border-[#21262d] rounded-md px-3 py-1.5 text-xs text-[#c9d1d9]
+             focus:outline-none focus:border-[#00d4ff] transition"/>
+  </div>
+  <button onclick="toggleConnection()"
+    id="connect-btn"
+    class="px-3 py-1.5 rounded-md text-xs font-semibold bg-[#00d4ff] text-[#0d1117] hover:bg-[#00b8d9] active:scale-95 transition-all select-none">
+    <i class="fa-solid fa-plug mr-1"></i>Connect
+  </button>
+
+  <!-- Status -->
+  <div class="flex items-center gap-2">
+    <span id="status-dot"></span>
+    <span id="status-label" class="text-xs text-[#8b949e]">Disconnected</span>
+  </div>
+
+  <!-- Mode selector -->
+  <div class="flex gap-2 ml-2">
+    <button class="mode-btn manual active" id="btn-manual"   onclick="setMode('manual')">
+      <i class="fa-solid fa-gamepad"></i><span class="hidden sm:inline">Manual</span>
+    </button>
+    <button class="mode-btn auto"          id="btn-auto"     onclick="setMode('autonomous')">
+      <i class="fa-solid fa-route"></i><span class="hidden sm:inline">Auto</span>
+    </button>
+    <button class="mode-btn ai"            id="btn-ai"       onclick="setMode('ai')">
+      <i class="fa-solid fa-brain"></i><span class="hidden sm:inline">AI</span>
+    </button>
+  </div>
+
+  <div class="flex-1"></div>
+  <div id="clock" class="text-[10px] text-[#8b949e] tabular-nums"></div>
+</header>
+
+
+<!-- ═══════════ SHELL ═══════════ -->
+<div class="flex flex-1 min-h-0 overflow-hidden">
+
+  <!-- ── Side nav ── -->
+  <nav id="sidenav" class="bg-[#0d1117] border-r border-[#21262d] flex flex-col gap-1 py-3 px-2 flex-shrink-0 overflow-hidden z-30">
+    <div class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
+      <i class="fa-solid fa-gauge-high fa-fw"></i>
+      <span class="nav-label text-xs">Dashboard</span>
+    </div>
+    <div class="nav-item" id="nav-radar" onclick="showPage('radar')">
+      <i class="fa-solid fa-satellite-dish fa-fw"></i>
+      <span class="nav-label text-xs">Radar</span>
+    </div>
+    <div class="nav-item" id="nav-path" onclick="showPage('path')">
+      <i class="fa-solid fa-route fa-fw"></i>
+      <span class="nav-label text-xs">Path Planner</span>
+    </div>
+    <div class="nav-item" id="nav-ai" onclick="showPage('ai')">
+      <i class="fa-solid fa-brain fa-fw"></i>
+      <span class="nav-label text-xs">AI Insight</span>
+    </div>
+    <div class="nav-item mt-auto" id="nav-config" onclick="openConfig()">
+      <i class="fa-solid fa-sliders fa-fw"></i>
+      <span class="nav-label text-xs">AI Configuration</span>
+    </div>
+  </nav>
+
+  <!-- ── Page container ── -->
+  <div class="flex-1 overflow-y-auto relative" id="page-host">
+
+    <!-- ════════ PAGE: DASHBOARD ════════ -->
+    <div id="page-dashboard" class="page active p-4 gap-4 grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4">
+
+      <!-- 3D Car Model (spans 2 cols) -->
+      <div class="panel glow-card p-4 flex flex-col gap-3 lg:col-span-2">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-car text-[#00d4ff]"></i>
+          <h2 class="text-xs font-bold tracking-widest uppercase">3D Sensor Visualization</h2>
+          <span class="ml-auto text-[10px] text-[#8b949e]">Drag to orbit</span>
+        </div>
+        <!-- 3D viewport: overflow-hidden prevents Three.js canvas from bleeding outside card -->
+        <div id="car3d-wrap">
+          <canvas id="car3d-canvas"></canvas>
+          <!-- ToF overlay labels -->
+          <div id="tof-label-front" class="tof-overlay" style="top:6px;left:50%;transform:translateX(-50%)">
+            <i class="fa-solid fa-arrow-up text-[8px] mr-1"></i><span id="tof3d-front">— cm</span>
+          </div>
+          <div id="tof-label-back" class="tof-overlay" style="bottom:6px;left:50%;transform:translateX(-50%)">
+            <i class="fa-solid fa-arrow-down text-[8px] mr-1"></i><span id="tof3d-back">— cm</span>
+          </div>
+          <div id="tof-label-left" class="tof-overlay" style="top:50%;left:6px;transform:translateY(-50%)">
+            <i class="fa-solid fa-arrow-left text-[8px] mr-1"></i><span id="tof3d-left">— cm</span>
+          </div>
+          <div id="tof-label-right" class="tof-overlay" style="top:50%;right:6px;transform:translateY(-50%)">
+            <span id="tof3d-right">— cm</span><i class="fa-solid fa-arrow-right text-[8px] ml-1"></i>
+          </div>
+        </div>
+
+        <!-- Sensor toggles row -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
+          <div class="tof-mini">
+            <div class="val" id="tof-front">—</div>
+            <div class="lbl">Front</div>
+            <label class="tog-wrap mt-1"><input type="checkbox" id="tog-front" checked onchange="sendSensorToggle('front',this.checked)"><span class="tog-slider"></span></label>
+          </div>
+          <div class="tof-mini">
+            <div class="val" id="tof-back">—</div>
+            <div class="lbl">Back</div>
+            <label class="tog-wrap mt-1"><input type="checkbox" id="tog-back" checked onchange="sendSensorToggle('back',this.checked)"><span class="tog-slider"></span></label>
+          </div>
+          <div class="tof-mini">
+            <div class="val" id="tof-left">—</div>
+            <div class="lbl">Left</div>
+            <label class="tog-wrap mt-1"><input type="checkbox" id="tog-left" checked onchange="sendSensorToggle('left',this.checked)"><span class="tog-slider"></span></label>
+          </div>
+          <div class="tof-mini">
+            <div class="val" id="tof-right">—</div>
+            <div class="lbl">Right</div>
+            <label class="tog-wrap mt-1"><input type="checkbox" id="tog-right" checked onchange="sendSensorToggle('right',this.checked)"><span class="tog-slider"></span></label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Joystick Panel -->
+      <div class="panel glow-card p-4 flex flex-col gap-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-gamepad text-[#00d4ff]"></i>
+          <h2 class="text-xs font-bold tracking-widest uppercase">Navigation</h2>
+          <span class="ml-auto text-[10px] text-[#8b949e]">WASD/↑↓←→</span>
+        </div>
+        <div id="joystick-zone"></div>
+        <div id="rc-label"><i class="fa-solid fa-triangle-exclamation mr-1"></i>MANUAL RC ACTIVE</div>
+        <div class="text-xs text-[#8b949e] text-center">
+          CMD: <span id="cmd-display" class="text-[#00d4ff] font-bold">S</span>
+        </div>
+        <!-- D-pad indicators -->
+        <div class="grid grid-cols-3 gap-1 w-24 mx-auto text-center text-[10px] select-none">
+          <div></div>
+          <div id="ind-F" class="dir-ind bg-[#0d1117] border border-[#21262d] rounded py-1 transition-all">F</div>
+          <div></div>
+          <div id="ind-L" class="dir-ind bg-[#0d1117] border border-[#21262d] rounded py-1 transition-all">L</div>
+          <div id="ind-S" class="dir-ind bg-[#0d1117] border border-[#21262d] rounded py-1 transition-all">●</div>
+          <div id="ind-R" class="dir-ind bg-[#0d1117] border border-[#21262d] rounded py-1 transition-all">R</div>
+          <div></div>
+          <div id="ind-B" class="dir-ind bg-[#0d1117] border border-[#21262d] rounded py-1 transition-all">B</div>
+          <div></div>
+        </div>
+        <div id="ws-log" class="mt-1"></div>
+      </div>
+
+      <!-- Heading & Battery -->
+      <div class="panel glow-card p-4 flex flex-col gap-4">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-compass text-[#00d4ff]"></i>
+          <h2 class="text-xs font-bold tracking-widest uppercase">Heading & Power</h2>
+        </div>
+        <div class="flex flex-col items-center gap-2">
+          <div id="compass-wrap">
+            <span class="absolute text-[9px] text-[#8b949e]" style="top:3px;left:50%;transform:translateX(-50%)">N</span>
+            <span class="absolute text-[9px] text-[#8b949e]" style="bottom:3px;left:50%;transform:translateX(-50%)">S</span>
+            <span class="absolute text-[9px] text-[#8b949e]" style="left:3px;top:50%;transform:translateY(-50%)">W</span>
+            <span class="absolute text-[9px] text-[#8b949e]" style="right:3px;top:50%;transform:translateY(-50%)">E</span>
+            <div id="compass-needle"></div>
+          </div>
+          <div class="text-xs text-[#8b949e]">Heading: <span id="heading-val" class="text-[#00d4ff] font-bold">—°</span></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-[#8b949e]"><i class="fa-solid fa-battery-three-quarters mr-1"></i>Battery</span>
+            <span id="battery-pct" class="text-[#00d4ff] font-bold">—%</span>
+          </div>
+          <div class="w-full h-2 bg-[#0d1117] rounded-full border border-[#21262d] overflow-hidden">
+            <div id="battery-bar" style="width:0%"></div>
+          </div>
+          <div id="battery-warn" class="hidden text-[10px] text-[#ff4444] mt-1">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i>Low battery
+          </div>
+        </div>
+        <!-- Stats -->
+        <div class="grid grid-cols-2 gap-2">
+          <div class="tof-mini"><div class="val text-[1rem]" id="stat-fps">—</div><div class="lbl">Msg/sec</div></div>
+          <div class="tof-mini"><div class="val text-[1rem]" id="stat-total">0</div><div class="lbl">Total Msgs</div></div>
+        </div>
+        <!-- System mode status from incoming JSON -->
+        <div class="tof-mini mt-1">
+          <div class="val text-[.9rem]" id="sys-mode-display">—</div>
+          <div class="lbl">Active Mode (Car)</div>
+        </div>
+      </div>
+
+    </div><!-- /page-dashboard -->
+
+
+    <!-- ════════ PAGE: RADAR ════════ -->
+    <div id="page-radar" class="page p-4 gap-4 grid grid-cols-1 md:grid-cols-2">
+      <div class="panel glow-card p-4 flex flex-col gap-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-satellite-dish text-[#00d4ff]"></i>
+          <h2 class="text-xs font-bold tracking-widest uppercase">Proximity Radar</h2>
+          <span class="ml-auto text-[10px] text-[#8b949e]">
+            <span id="radar-angle-display">—</span>° / <span id="radar-dist-display">—</span> cm
+          </span>
+        </div>
+        <canvas id="radar-canvas" width="300" height="160"></canvas>
+        <div class="flex justify-between text-[10px] text-[#8b949e] px-2 -mt-1">
+          <span>180°</span><span>90°</span><span>0°</span>
+        </div>
+      </div>
+      <div class="panel glow-card p-4 flex flex-col gap-4">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-chart-bar text-[#00d4ff]"></i>
+          <h2 class="text-xs font-bold tracking-widest uppercase">Distance History</h2>
+        </div>
+        <canvas id="hist-canvas" width="300" height="140" class="w-full border border-[#21262d] rounded-lg bg-[#0d1117]"></canvas>
+        <div class="text-[10px] text-[#8b949e]">Last 60 readings — scroll right for oldest</div>
+      </div>
+    </div>
+
+
+    <!-- ════════ PAGE: PATH PLANNER ════════ -->
+    <div id="page-path" class="page p-4 gap-4 flex flex-col">
+      <div class="panel glow-card p-4 flex flex-col gap-3">
+        <div class="flex items-center gap-2 mb-1">
+          <i class="fa-solid fa-route text-[#3b82f6]"></i>
+          <h2 class="text-xs font-bold tracking-widest uppercase text-[#3b82f6]">Autonomous Path Planner</h2>
+        </div>
+        <p class="text-[11px] text-[#8b949e]">Click on the grid below to place waypoints. Activate Autonomous Mode to begin execution.</p>
+        <canvas id="path-canvas" width="600" height="320" onclick="addWaypoint(event)"></canvas>
+        <div class="flex gap-2 flex-wrap mt-1">
+          <button onclick="clearWaypoints()" class="px-3 py-1.5 text-xs rounded-md bg-[#ff444422] border border-[#ff4444] text-[#ff4444] hover:bg-[#ff444444] transition">
+            <i class="fa-solid fa-trash mr-1"></i>Clear Waypoints
+          </button>
+          <button onclick="sendPath()" class="px-3 py-1.5 text-xs rounded-md bg-[#3b82f622] border border-[#3b82f6] text-[#3b82f6] hover:bg-[#3b82f633] transition">
+            <i class="fa-solid fa-paper-plane mr-1"></i>Send Path to Car
+          </button>
+          <button onclick="setMode('autonomous')" class="px-3 py-1.5 text-xs rounded-md bg-[#3b82f6] text-white hover:bg-[#2563eb] transition">
+            <i class="fa-solid fa-play mr-1"></i>Start Autonomous
+          </button>
+        </div>
+        <div id="waypoint-list" class="text-[10px] text-[#8b949e]">No waypoints set.</div>
+      </div>
+    </div>
+
+
+    <!-- ════════ PAGE: AI INSIGHT ════════ -->
+    <div id="page-ai" class="page p-4 gap-4 grid grid-cols-1 md:grid-cols-2">
+      <div class="panel glow-card p-4 flex flex-col gap-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-camera text-[#00d4ff]"></i>
+          <h2 class="text-xs font-bold tracking-widest uppercase">Latest Frame</h2>
+          <span class="ml-auto text-[10px] text-[#8b949e]" id="ai-ts">No data</span>
+        </div>
+        <img id="ai-image" src="" alt="AI feed"
+          onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22200%22><rect fill=%22%230d1117%22 width=%22400%22 height=%22200%22/><text fill=%22%2321262d%22 font-family=%22monospace%22 font-size=%2216%22 x=%22200%22 y=%22105%22 text-anchor=%22middle%22>No%20Feed</text></svg>'"/>
+        <div class="flex items-center gap-2 mt-1">
+          <div class="tof-mini flex-1">
+            <div class="val text-[.9rem]" id="ai-api-status">—</div>
+            <div class="lbl">API Status</div>
+          </div>
+          <button onclick="requestAIFrame()" class="px-3 py-1.5 text-xs rounded-md bg-[#eab30822] border border-[#eab308] text-[#eab308] hover:bg-[#eab30833] transition">
+            <i class="fa-solid fa-rotate mr-1"></i>Request Frame
+          </button>
+        </div>
+      </div>
+      <div class="panel glow-card p-4 flex flex-col gap-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-microchip text-[#eab308]"></i>
+          <h2 class="text-xs font-bold tracking-widest uppercase">Gemini Analysis</h2>
+        </div>
+        <div id="gemini-text" class="flex-1 bg-[#0d1117] border border-[#21262d] rounded-lg p-4 text-sm text-[#c9d1d9] leading-relaxed">
+          Awaiting data…
+        </div>
+        <!-- Streaming effect indicator -->
+        <div class="flex gap-2 items-center text-[10px] text-[#8b949e]">
+          <span id="ai-model-display">Model: —</span>
+          <span id="ai-interval-display" class="ml-auto">Interval: —s</span>
+        </div>
+      </div>
+    </div>
+
+
+  </div><!-- /page-host -->
+</div><!-- /shell -->
+
+
+<!-- ══════════════════════════════════════════════════════
+     CONFIG SLIDE-OVER — fixed overlay, zero layout impact
+══════════════════════════════════════════════════════ -->
+<div id="config-backdrop" onclick="closeConfig()" aria-hidden="true"></div>
+
+<aside id="config-panel" role="dialog" aria-modal="true" aria-label="AI Configuration">
+
+  <div class="flex items-center gap-3 px-6 py-4 border-b border-[#21262d] flex-shrink-0 sticky top-0 bg-[#0d1117] z-10">
+    <i class="fa-solid fa-sliders text-[#00d4ff]"></i>
+    <h2 class="text-sm font-bold tracking-widest uppercase text-[#c9d1d9]">AI Configuration</h2>
+    <button onclick="closeConfig()" class="ml-auto text-[#8b949e] hover:text-[#ff4444] transition text-base" aria-label="Close">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+  </div>
+
+  <div class="cfg-section flex flex-col gap-3">
+    <label class="block text-[10px] text-[#8b949e] uppercase tracking-widest mb-1">Gemini / Ollama API Key</label>
+    <div class="relative">
+      <input id="cfg-apikey" type="password" placeholder="AIza… or Ollama endpoint" class="cfg-input" autocomplete="off"/>
+      <button onclick="togglePassword('cfg-apikey')" class="absolute right-3 top-1/2 -translate-y-1/2 text-[#8b949e] hover:text-[#00d4ff] text-xs transition" aria-label="Toggle visibility">
+        <i id="cfg-apikey-eye" class="fa-solid fa-eye"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="cfg-section flex flex-col gap-3">
+    <label class="block text-[10px] text-[#8b949e] uppercase tracking-widest mb-1">Vision Model</label>
+    <div class="cfg-select-wrap">
+      <select id="cfg-model" class="cfg-input">
+        <optgroup label="Qwen2.5-VL (Local/Ollama)" style="color:#8b949e">
+          <option value="qwen2.5vl:3b">qwen2.5vl:3b — Lightweight (3B params)</option>
+          <option value="qwen2.5vl:7b" selected>qwen2.5vl:7b — High Performance (7B params)</option>
+        </optgroup>
+        <optgroup label="Google Gemini (Cloud)" style="color:#8b949e">
+          <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+          <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+          <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+          <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="flex items-center gap-2 px-3 py-2 bg-[#161b22] border border-[#21262d] rounded-lg">
+      <i class="fa-solid fa-circle-dot text-[#00d4ff] text-[10px]"></i>
+      <span class="text-[11px] text-[#8b949e]">Active:</span>
+      <span id="active-model-badge" class="text-[11px] text-[#00d4ff] font-bold">qwen2.5vl:7b</span>
+    </div>
+  </div>
+
+  <div class="cfg-section flex flex-col gap-3">
+    <label class="block text-[10px] text-[#8b949e] uppercase tracking-widest">
+      Polling Interval: <span id="interval-label" class="text-[#00d4ff]">5s</span>
+    </label>
+    <input type="range" id="cfg-interval" min="1" max="60" value="5" step="1"
+      oninput="document.getElementById('interval-label').textContent=this.value+'s'" class="w-full"/>
+    <div class="flex justify-between text-[10px] text-[#8b949e]"><span>1s</span><span>30s</span><span>60s</span></div>
+  </div>
+
+  <div class="cfg-section flex flex-col gap-3">
+    <label class="block text-[10px] text-[#8b949e] uppercase tracking-widest">
+      Proximity Alert: <span id="thresh-label" class="text-[#ff4444]">30 cm</span>
+    </label>
+    <input type="range" id="cfg-threshold" min="5" max="100" value="30" step="5"
+      oninput="document.getElementById('thresh-label').textContent=this.value+' cm';DANGER_CM=parseInt(this.value)" class="w-full"/>
+  </div>
+
+  <div class="cfg-section flex flex-col gap-3">
+    <button onclick="saveConfig()" class="w-full px-4 py-2.5 rounded-lg text-xs font-bold bg-[#00d4ff] text-[#0d1117] hover:bg-[#00b8d9] transition active:scale-95">
+      <i class="fa-solid fa-floppy-disk mr-2"></i>Save to localStorage
+    </button>
+    <button onclick="sendConfigTocar()" class="w-full px-4 py-2.5 rounded-lg text-xs font-bold bg-[#00d4ff22] border border-[#00d4ff] text-[#00d4ff] hover:bg-[#00d4ff33] transition active:scale-95">
+      <i class="fa-solid fa-upload mr-2"></i>Push to Car (WebSocket)
+    </button>
+    <button onclick="resetDefaults()" class="w-full px-4 py-2.5 rounded-lg text-xs font-bold bg-[#ff444422] border border-[#ff4444] text-[#ff4444] hover:bg-[#ff444433] transition active:scale-95">
+      <i class="fa-solid fa-rotate-left mr-2"></i>Reset to Defaults
+    </button>
+  </div>
+
+  <div class="px-6 pb-8 text-[10px] text-[#8b949e] leading-relaxed">
+    Settings persist in <code class="text-[#00d4ff]">localStorage['smartcar_config']</code>.
+    The API key is never transmitted raw — only a presence flag is sent.
+  </div>
+</aside>
+
+
+<!-- ═══════════ FIXED ACTION BAR ═══════════ -->
+<div id="action-bar">
+  <button onclick="saveConfig()" title="Save Configuration"
+    class="w-10 h-10 rounded-full bg-[#00d4ff] text-[#0d1117] hover:bg-[#00b8d9] active:scale-95 transition-all shadow-lg flex items-center justify-center">
+    <i class="fa-solid fa-floppy-disk"></i>
+  </button>
+  <button onclick="resetDefaults()" title="Reset Defaults"
+    class="w-10 h-10 rounded-full bg-[#ff444422] border border-[#ff4444] text-[#ff4444] hover:bg-[#ff444444] active:scale-95 transition-all shadow-lg flex items-center justify-center">
+    <i class="fa-solid fa-rotate-left"></i>
+  </button>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════ -->
+<script>
+/* ══════════════════════════════════════════
+   GLOBALS
+══════════════════════════════════════════ */
+let ws          = null;
+let isConnected = false;
+let rcOverride  = false;
+let joystick    = null;
+let lastCmd     = 'S';
+let msgCount    = 0;
+let totalMsgs   = 0;
+let lastTick    = Date.now();
+let currentMode = 'manual';
+let DANGER_CM   = 30;
+
+const waypoints = [];
+
+/* ══════════════════════════════════════════
+   CLOCK
+══════════════════════════════════════════ */
+const clockEl = document.getElementById('clock');
+setInterval(() => {
+  clockEl.textContent = new Date().toLocaleTimeString('en-GB',{hour12:false});
+}, 1000);
+
+/* ══════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════ */
+let toastTimer = null;
+function toast(msg, type='info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + (type==='ok'?'toast-ok':type==='err'?'toast-err':'');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+/* ══════════════════════════════════════════
+   NAV & ROUTING
+══════════════════════════════════════════ */
+/* Maps page name → the correct CSS display value to use when active.
+   Inline style always wins over CSS class specificity. */
+const PAGE_DISPLAY = { dashboard:'grid', radar:'grid', path:'flex', ai:'grid' };
+
+function toggleNav() {
+  document.getElementById('sidenav').classList.toggle('expanded');
+}
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => { p.classList.remove('active'); p.style.display=''; });
+  const el = document.getElementById('page-' + name);
+  el.style.display = PAGE_DISPLAY[name] || 'flex';
+  el.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navEl = document.getElementById('nav-' + name);
+  if (navEl) navEl.classList.add('active');
+  if (name === 'radar') drawRadar();
+}
+
+function openConfig() {
+  document.getElementById('config-panel').classList.add('open');
+  document.getElementById('config-backdrop').classList.add('open');
+}
+
+function closeConfig() {
+  document.getElementById('config-panel').classList.remove('open');
+  document.getElementById('config-backdrop').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeConfig(); });
+
+/* ══════════════════════════════════════════
+   WEBSOCKET
+══════════════════════════════════════════ */
+window.toggleConnection = function() { isConnected ? disconnect() : connect(); };
+
+function connect() {
+  const ip = document.getElementById('ip-input').value.trim();
+  if (!ip) return;
+  if (!/^[a-zA-Z0-9.\-_]+$/.test(ip)) { toast('Invalid IP address.','err'); return; }
+
+  setStatus('connecting');
+  log('Connecting to ws://'+ip+':80 …','info');
+
+  try { ws = new WebSocket('ws://'+ip+':80'); }
+  catch(e) { setStatus('disconnected'); log('Error: '+e.message,'err'); return; }
+
+  ws.onopen = () => {
+    isConnected = true;
+    setStatus('connected');
+    log('Connected!','ok');
+    toast('Connected to '+ip,'ok');
+    document.getElementById('connect-btn').innerHTML='<i class="fa-solid fa-plug-circle-xmark mr-1"></i>Disconnect';
+  };
+
+  ws.onmessage = (ev) => {
+    msgCount++; totalMsgs++;
+    try { handleMessage(JSON.parse(ev.data)); } catch(_) {}
+  };
+
+  ws.onclose = () => {
+    isConnected = false;
+    setStatus('disconnected');
+    log('Disconnected.','err');
+    toast('WebSocket closed','err');
+    document.getElementById('connect-btn').innerHTML='<i class="fa-solid fa-plug mr-1"></i>Connect';
+    ws = null;
+  };
+
+  ws.onerror = () => log('WS error.','err');
+}
+
+function disconnect() { if(ws) ws.close(); }
+
+function setStatus(s) {
+  document.getElementById('status-dot').className = s;
+  document.getElementById('status-label').textContent =
+    s==='connected'?'Connected':s==='connecting'?'Connecting…':'Disconnected';
+}
+
+function sendWS(msg) {
+  if(ws && ws.readyState===WebSocket.OPEN) ws.send(msg);
+}
+
+/* ══════════════════════════════════════════
+   SYSTEM UPDATE — sends config_update event
+   whenever model or sensor masks change.
+══════════════════════════════════════════ */
+function sendSystemUpdate() {
+  const mask =
+    (document.getElementById('tog-front').checked ? '1' : '0') +
+    (document.getElementById('tog-back') .checked ? '1' : '0') +
+    (document.getElementById('tog-left') .checked ? '1' : '0') +
+    (document.getElementById('tog-right').checked ? '1' : '0');
+  sendWS(JSON.stringify({
+    event: 'config_update',
+    data: { active_model: document.getElementById('cfg-model').value, sensors_mask: mask }
+  }));
+}
+
+/* ══════════════════════════════════════════
+   MSG / SEC
+══════════════════════════════════════════ */
+setInterval(() => {
+  const dt = (Date.now()-lastTick)/1000;
+  document.getElementById('stat-fps').textContent   = dt>0?(msgCount/dt).toFixed(1):'0';
+  document.getElementById('stat-total').textContent = totalMsgs;
+  msgCount=0; lastTick=Date.now();
+}, 1000);
+
+/* ══════════════════════════════════════════
+   LOG
+══════════════════════════════════════════ */
+const logEl = document.getElementById('ws-log');
+function log(msg, cls) {
+  const p = document.createElement('p');
+  if(cls) p.className=cls;
+  p.textContent='['+new Date().toLocaleTimeString('en-GB',{hour12:false})+'] '+msg;
+  logEl.appendChild(p);
+  while(logEl.children.length>80) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop=logEl.scrollHeight;
+}
+
+/* ══════════════════════════════════════════
+   MESSAGE HANDLER (Expanded JSON structure)
+══════════════════════════════════════════ */
+function handleMessage(d) {
+  if(d.telemetry)  updateTelemetry(d.telemetry);
+  if(d.radar)      updateRadar(d.radar.angle, d.radar.distance);
+  if(d.ai_insight) updateAI(d.ai_insight);
+  if(d.system)     updateSystem(d.system);
+}
+
+/* ── TELEMETRY (new expanded structure) ── */
+function updateTelemetry(t) {
+  // Support both new {dist,active} format AND old plain number format
+  const front = t.tof_front, back = t.tof_back, left = t.tof_left, right = t.tof_right;
+
+  const fd = typeof front==='object' ? front.dist : front;
+  const bd = typeof back ==='object' ? back.dist  : back;
+  const ld = typeof left ==='object' ? left.dist  : left;
+  const rd = typeof right==='object' ? right.dist : right;
+
+  const fa = typeof front==='object' ? front.active : true;
+  const ba = typeof back ==='object' ? back.active  : true;
+  const la = typeof left ==='object' ? left.active  : true;
+  const ra = typeof right==='object' ? right.active : true;
+
+  // Sync toggles from car state
+  syncToggle('front', fa); syncToggle('back',  ba);
+  syncToggle('left',  la); syncToggle('right', ra);
+
+  // Update mini cards
+  setTofCard('tof-front', fd, fa);
+  setTofCard('tof-back',  bd, ba);
+  setTofCard('tof-left',  ld, la);
+  setTofCard('tof-right', rd, ra);
+
+  // Update 3D overlays
+  update3DOverlay('front', fd, fa);
+  update3DOverlay('back',  bd, ba);
+  update3DOverlay('left',  ld, la);
+  update3DOverlay('right', rd, ra);
+
+  // Update shader uniforms
+  updateShaderProximity(fd, bd, ld, rd);
+
+  if(t.heading!==undefined) {
+    const h = parseFloat(t.heading);
+    document.getElementById('heading-val').textContent = h.toFixed(1)+'°';
+    document.getElementById('compass-needle').style.transform=
+      'translateX(-50%) translateY(-100%) rotate('+h+'deg)';
+  }
+
+  if(t.battery!==undefined) {
+    const pct = Math.min(100,Math.max(0,parseFloat(t.battery)));
+    document.getElementById('battery-pct').textContent = pct.toFixed(0)+'%';
+    const bar = document.getElementById('battery-bar');
+    bar.style.width = pct+'%';
+    bar.classList.toggle('low', pct<20);
+    document.getElementById('battery-warn').classList.toggle('hidden', pct>=20);
+  }
+
+  const rc = !!t.rc_override;
+  if(rc!==rcOverride) { rcOverride=rc; applyRC(rc); }
+}
+
+function syncToggle(side, active) {
+  const cb = document.getElementById('tog-'+side);
+  if(cb && cb.checked !== active) cb.checked = active;
+}
+
+function setTofCard(id, dist, active) {
+  const el = document.getElementById(id);
+  if(!el) return;
+  if(!active) { el.textContent='OFF'; el.className='val inactive'; return; }
+  const v = parseFloat(dist);
+  if(dist===null||dist===undefined||isNaN(v)) { el.textContent='—'; el.className='val'; return; }
+  el.textContent = v.toFixed(0)+' cm';
+  el.className = 'val' + (v < DANGER_CM ? ' danger' : '');
+}
+
+function update3DOverlay(side, dist, active) {
+  const label = document.getElementById('tof-label-'+side);
+  const span  = document.getElementById('tof3d-'+side);
+  if(!label||!span) return;
+  if(!active) { span.textContent='OFF'; label.classList.remove('danger'); return; }
+  const v = parseFloat(dist);
+  span.textContent = (dist===null||dist===undefined||isNaN(v)) ? '—' : v.toFixed(0)+' cm';
+  label.classList.toggle('danger', !isNaN(v) && v < DANGER_CM);
+}
+
+/* ── SYSTEM ── */
+function updateSystem(sys) {
+  if(sys.operational_mode) {
+    document.getElementById('sys-mode-display').textContent = sys.operational_mode.toUpperCase();
+    // Mirror mode buttons to car-reported mode (without re-emitting)
+    highlightModeBtn(sys.operational_mode);
+  }
+  if(sys.ai_status) {
+    const cfg = sys.ai_status.api_configured;
+    document.getElementById('ai-api-status').textContent = cfg ? 'Configured ✓' : 'Not configured';
+    document.getElementById('ai-api-status').style.color  = cfg ? '#00ff88' : '#ff4444';
+  }
+}
+
+/* ── AI INSIGHT ── */
+function updateAI(ai) {
+  if(ai.latest_image_url) {
+    document.getElementById('ai-image').src = ai.latest_image_url+'?t='+Date.now();
+  }
+  if(ai.gemini_analysis!==undefined) {
+    document.getElementById('gemini-text').textContent = ai.gemini_analysis;
+  }
+  const ts = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  document.getElementById('ai-ts').textContent = 'Updated '+ts;
+}
+
+/* ── RADAR DATA ── */
+function updateRadar(angleDeg, distCm) {
+  const a = parseFloat(angleDeg), d = parseFloat(distCm);
+  document.getElementById('radar-angle-display').textContent = a.toFixed(1);
+  document.getElementById('radar-dist-display').textContent  = d.toFixed(1);
+
+  const maxR  = 200;
+  const scale = (Math.min(d,maxR)/maxR) * RH;
+  const rad   = (a*Math.PI)/180;
+  const cx = RW/2, cy = RH;
+
+  blips.push({ x: cx+scale*Math.cos(Math.PI-rad), y: cy-scale*Math.sin(rad), age:0 });
+  if(blips.length>60) blips.shift();
+
+  // Distance history
+  distHistory.push(d);
+  if(distHistory.length>60) distHistory.shift();
+
+  sweepAngle = a;
+  drawRadar();
+  drawHistory();
+}
+
+/* ══════════════════════════════════════════
+   RADAR CANVAS
+══════════════════════════════════════════ */
+const radarCanvas = document.getElementById('radar-canvas');
+const rctx = radarCanvas.getContext('2d');
+const RW = radarCanvas.width, RH = radarCanvas.height;
+const blips = [];
+const distHistory = [];
+let sweepAngle = 0, idleDir = 1;
+
+function drawRadar() {
+  const cx = RW/2, cy = RH, r = RH;
+  rctx.clearRect(0,0,RW,RH);
+  rctx.fillStyle='#0d1117'; rctx.fillRect(0,0,RW,RH);
+
+  rctx.save();
+  rctx.beginPath(); rctx.arc(cx,cy,r,Math.PI,0,false);
+  rctx.lineTo(cx,cy); rctx.closePath(); rctx.clip();
+
+  for(let i=1;i<=4;i++) {
+    const ar=(r/4)*i;
+    rctx.beginPath(); rctx.arc(cx,cy,ar,Math.PI,0,false);
+    rctx.strokeStyle=i===4?'#2a3040':'#1a2030'; rctx.lineWidth=1; rctx.stroke();
+    rctx.fillStyle='#30404d'; rctx.font='9px monospace';
+    rctx.fillText((50*i)+'cm', cx+ar-26, cy-4);
+  }
+  for(let d=0;d<=180;d+=30) {
+    const rad=(d*Math.PI)/180;
+    rctx.beginPath(); rctx.moveTo(cx,cy);
+    rctx.lineTo(cx+r*Math.cos(Math.PI-rad), cy-r*Math.sin(rad));
+    rctx.strokeStyle='#1a2030'; rctx.lineWidth=1; rctx.stroke();
+  }
+
+  const swRad=(sweepAngle*Math.PI)/180;
+  const ex=cx+r*Math.cos(Math.PI-swRad), ey=cy-r*Math.sin(swRad);
+  const g=rctx.createLinearGradient(cx,cy,ex,ey);
+  g.addColorStop(0,'rgba(0,212,255,0)'); g.addColorStop(1,'rgba(0,212,255,.85)');
+  rctx.beginPath(); rctx.moveTo(cx,cy); rctx.lineTo(ex,ey);
+  rctx.strokeStyle=g; rctx.lineWidth=2; rctx.stroke();
+
+  blips.forEach(b => {
+    const alpha=Math.max(0,1-b.age/60);
+    rctx.beginPath(); rctx.arc(b.x,b.y,4,0,Math.PI*2);
+    rctx.fillStyle='rgba(0,255,136,'+alpha+')';
+    rctx.shadowColor='#00ff88'; rctx.shadowBlur=10*alpha;
+    rctx.fill(); rctx.shadowBlur=0; b.age++;
+  });
+
+  rctx.restore();
+  rctx.beginPath(); rctx.arc(cx,cy,r,Math.PI,0,false);
+  rctx.strokeStyle='#21262d'; rctx.lineWidth=2; rctx.stroke();
+  rctx.beginPath(); rctx.moveTo(0,cy); rctx.lineTo(RW,cy);
+  rctx.strokeStyle='#21262d'; rctx.lineWidth=1; rctx.stroke();
+}
+
+/* ── Distance History chart ── */
+const histCanvas = document.getElementById('hist-canvas');
+const hctx = histCanvas.getContext('2d');
+function drawHistory() {
+  const W=histCanvas.width, H=histCanvas.height;
+  hctx.clearRect(0,0,W,H);
+  hctx.fillStyle='#0d1117'; hctx.fillRect(0,0,W,H);
+  if(distHistory.length<2) return;
+  const maxV=200, step=W/59;
+  hctx.beginPath();
+  distHistory.forEach((v,i) => {
+    const x=i*step, y=H-(v/maxV)*H*0.9-4;
+    i===0?hctx.moveTo(x,y):hctx.lineTo(x,y);
+  });
+  hctx.strokeStyle='#00d4ff'; hctx.lineWidth=2; hctx.stroke();
+
+  // Danger threshold line
+  const ty=H-(DANGER_CM/maxV)*H*0.9-4;
+  hctx.setLineDash([4,4]);
+  hctx.beginPath(); hctx.moveTo(0,ty); hctx.lineTo(W,ty);
+  hctx.strokeStyle='#ff4444'; hctx.lineWidth=1; hctx.stroke();
+  hctx.setLineDash([]);
+}
+
+/* Idle sweep */
+(function tick() {
+  if(!isConnected) {
+    sweepAngle+=0.5*idleDir;
+    if(sweepAngle>=180) idleDir=-1;
+    if(sweepAngle<=0)   idleDir= 1;
+    // Use style.display instead of classList to match our showPage() approach
+    const rp = document.getElementById('page-radar');
+    if(rp && rp.style.display && rp.style.display!=='none') drawRadar();
+  }
+  requestAnimationFrame(tick);
+})();
+
+drawRadar();
+
+/* ══════════════════════════════════════════
+   THREE.JS 3D CAR MODEL
+══════════════════════════════════════════ */
+(function init3D() {
+  const container = document.getElementById('car3d-canvas');
+  const W = container.clientWidth || 400;
+  const H = 260;
+
+  // Renderer
+  const renderer = new THREE.WebGLRenderer({ canvas: container, antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(W, H);
+  renderer.setClearColor(0x060a10, 1);
+
+  // Scene / Camera
+  const scene  = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, W/H, 0.1, 100);
+  camera.position.set(0, 2.2, 4.5);
+  camera.lookAt(0, 0, 0);
+
+  // Lighting
+  scene.add(new THREE.AmbientLight(0x223344, 1.5));
+  const dirLight = new THREE.DirectionalLight(0x00d4ff, 1.2);
+  dirLight.position.set(3, 5, 3);
+  scene.add(dirLight);
+  const fillLight = new THREE.DirectionalLight(0x334455, 0.6);
+  fillLight.position.set(-3, 2, -2);
+  scene.add(fillLight);
+
+  // ── Grid floor ──
+  const gridHelper = new THREE.GridHelper(10, 20, 0x21262d, 0x21262d);
+  scene.add(gridHelper);
+
+  // ── Car chassis group ──
+  const carGroup = new THREE.Group();
+  scene.add(carGroup);
+
+  // Body
+  const bodyGeo  = new THREE.BoxGeometry(1.4, 0.35, 2.4);
+  const bodyMat  = new THREE.MeshPhongMaterial({ color:0x1a2535, shininess:80, specular:0x00d4ff });
+  const body     = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.38;
+  carGroup.add(body);
+
+  // Cabin
+  const cabinGeo  = new THREE.BoxGeometry(1.0, 0.30, 1.1);
+  const cabinMat  = new THREE.MeshPhongMaterial({ color:0x0d1525, shininess:120, specular:0x00aaff, opacity:0.85, transparent:true });
+  const cabin     = new THREE.Mesh(cabinGeo, cabinMat);
+  cabin.position.set(0, 0.73, -0.1);
+  carGroup.add(cabin);
+
+  // Wheels (4)
+  const wheelGeo  = new THREE.CylinderGeometry(0.28, 0.28, 0.22, 18);
+  const wheelMat  = new THREE.MeshPhongMaterial({ color:0x111820 });
+  const wheelPositions = [
+    [ 0.82, 0.28,  0.85],
+    [-0.82, 0.28,  0.85],
+    [ 0.82, 0.28, -0.85],
+    [-0.82, 0.28, -0.85],
+  ];
+  wheelPositions.forEach(p => {
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.rotation.z = Math.PI/2;
+    w.position.set(...p);
+    carGroup.add(w);
+  });
+
+  // Wheel rim rings
+  const rimGeo = new THREE.TorusGeometry(0.18, 0.04, 8, 18);
+  const rimMat = new THREE.MeshPhongMaterial({ color:0x00d4ff, emissive:0x003344 });
+  wheelPositions.forEach(p => {
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.rotation.y = Math.PI/2;
+    rim.position.set(...p);
+    carGroup.add(rim);
+  });
+
+  // Edge glow strips (front/back/sides)
+  const stripMat = new THREE.MeshBasicMaterial({ color:0x00d4ff });
+  [[0, 0.38, 1.22, 1.4, 0.04, 0.04],
+   [0, 0.38,-1.22, 1.4, 0.04, 0.04]].forEach(([x,y,z,sx,sy,sz]) => {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz), stripMat);
+    s.position.set(x,y,z); carGroup.add(s);
+  });
+
+  // ── Proximity ripple meshes (one per side) ──
+  // We use transparent planes with a custom ShaderMaterial to render the ripple effect
+  const rippleUniforms = {
+    front: { time:{value:0}, intensity:{value:0} },
+    back:  { time:{value:0}, intensity:{value:0} },
+    left:  { time:{value:0}, intensity:{value:0} },
+    right: { time:{value:0}, intensity:{value:0} },
+  };
+
+  const rippleVertSrc = `
+    varying vec2 vUv;
+    void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}
+  `;
+  const rippleFragSrc = `
+    uniform float time;
+    uniform float intensity;
+    varying vec2 vUv;
+    void main(){
+      vec2 center=vec2(0.5,0.5);
+      float dist=length(vUv-center);
+      float wave=sin(dist*18.-time*8.)*0.5+0.5;
+      float mask=smoothstep(0.5,0.0,dist);
+      float alpha=wave*mask*intensity*0.7;
+      gl_FragColor=vec4(1.,0.1,0.05,alpha);
+    }
+  `;
+
+  function makeRippleMesh(w,h,pos,rot) {
+    const geo = new THREE.PlaneGeometry(w,h);
+    const mat = new THREE.ShaderMaterial({
+      vertexShader:   rippleVertSrc,
+      fragmentShader: rippleFragSrc,
+      uniforms:       { time:{value:0}, intensity:{value:0} },
+      transparent:    true,
+      depthWrite:     false,
+      side:           THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(...pos);
+    if(rot) mesh.rotation.set(...rot);
+    carGroup.add(mesh);
+    return mat;
+  }
+
+  const rippleMats = {
+    front: makeRippleMesh(1.4, 0.35, [0, 0.38,  1.22], [0,0,0]),
+    back:  makeRippleMesh(1.4, 0.35, [0, 0.38, -1.22], [0,Math.PI,0]),
+    left:  makeRippleMesh(2.4, 0.35, [ 0.71, 0.38, 0], [0, Math.PI/2,0]),
+    right: makeRippleMesh(2.4, 0.35, [-0.71, 0.38, 0], [0,-Math.PI/2,0]),
+  };
+
+  // Expose so telemetry update can set intensity
+  window._rippleMats = rippleMats;
+
+  // ── Orbit controls (manual mouse drag) ──
+  let isDragging=false, prevX=0, prevY=0;
+  container.addEventListener('mousedown',  e=>{isDragging=true;prevX=e.clientX;prevY=e.clientY;});
+  window.addEventListener('mouseup',       ()=>isDragging=false);
+  window.addEventListener('mousemove', e=>{
+    if(!isDragging) return;
+    const dx=e.clientX-prevX, dy=e.clientY-prevY;
+    carGroup.rotation.y += dx*0.01;
+    camera.position.y    = Math.max(0.5, Math.min(5, camera.position.y - dy*0.02));
+    camera.lookAt(0,0,0);
+    prevX=e.clientX; prevY=e.clientY;
+  });
+  // Touch support
+  let tPrev=null;
+  container.addEventListener('touchstart', e=>{tPrev=e.touches[0];});
+  container.addEventListener('touchmove',  e=>{
+    if(!tPrev) return;
+    const dx=e.touches[0].clientX-tPrev.clientX;
+    carGroup.rotation.y+=dx*0.012; tPrev=e.touches[0];
+    e.preventDefault();
+  },{passive:false});
+
+  // ── Animation loop ──
+  const clock3d = new THREE.Clock();
+  function animate3D() {
+    requestAnimationFrame(animate3D);
+    const t = clock3d.getElapsedTime();
+    carGroup.rotation.y += 0.002; // gentle auto-spin when not dragged
+
+    // Update ripple shader uniforms
+    Object.keys(rippleMats).forEach(side => {
+      const mat = rippleMats[side];
+      mat.uniforms.time.value = t;
+    });
+
+    renderer.render(scene, camera);
+  }
+  animate3D();
+
+  // Resize
+  window.addEventListener('resize', () => {
+    const nW = container.clientWidth;
+    renderer.setSize(nW, H);
+    camera.aspect = nW/H;
+    camera.updateProjectionMatrix();
+  });
+})();
+
+/* Called from telemetry update */
+function updateShaderProximity(fd, bd, ld, rd) {
+  if(!window._rippleMats) return;
+  const calc = (d) => {
+    const v = parseFloat(d);
+    return (!isNaN(v) && v < DANGER_CM) ? Math.min(1, (DANGER_CM-v)/DANGER_CM) : 0;
+  };
+  window._rippleMats.front.uniforms.intensity.value = calc(fd);
+  window._rippleMats.back .uniforms.intensity.value = calc(bd);
+  window._rippleMats.left .uniforms.intensity.value = calc(ld);
+  window._rippleMats.right.uniforms.intensity.value = calc(rd);
+}
+
+/* ══════════════════════════════════════════
+   JOYSTICK
+══════════════════════════════════════════ */
+function initJoystick() {
+  joystick = nipplejs.create({
+    zone:        document.getElementById('joystick-zone'),
+    mode:        'static',
+    position:    { left:'50%', top:'50%' },
+    color:       '#00d4ff',
+    size:        110,
+    restOpacity: 0.45,
+  });
+  joystick.on('move', (_,d) => {
+    if(rcOverride||!isConnected) return;
+    const a   = d.angle.degree;
+    const cmd = a>=45&&a<135?'F':a>=135&&a<225?'L':a>=225&&a<315?'B':'R';
+    if(cmd!==lastCmd) { lastCmd=cmd; sendWS(cmd); highlightDir(cmd); }
+  });
+  joystick.on('end', () => {
+    if(rcOverride) return;
+    lastCmd='S'; sendWS('S'); highlightDir('S');
+  });
+}
+
+function highlightDir(cmd) {
+  document.getElementById('cmd-display').textContent=cmd;
+  ['F','B','L','R','S'].forEach(d=>{
+    const el=document.getElementById('ind-'+d); if(!el) return;
+    el.style.cssText=d===cmd
+      ?'background:#00d4ff22;border-color:#00d4ff;color:#00d4ff;text-shadow:0 0 6px #00d4ff;'
+      :'background:#0d1117;border-color:#21262d;color:#8b949e;text-shadow:none;';
+  });
+}
+
+function applyRC(active) {
+  document.getElementById('joystick-zone').classList.toggle('rc-active', active);
+  document.getElementById('rc-label').classList.toggle('visible', active);
+  if(active && joystick) { joystick.destroy(); joystick=null; log('RC Override — joystick disabled.','err'); }
+  else if(!active && !joystick) { initJoystick(); log('RC Override cleared — joystick restored.','ok'); }
+}
+
+initJoystick();
+highlightDir('S');
+
+/* ══════════════════════════════════════════
+   KEYBOARD
+══════════════════════════════════════════ */
+const KEY={ArrowUp:'F',w:'F',W:'F',ArrowDown:'B',s:'B',S:'B',ArrowLeft:'L',a:'L',A:'L',ArrowRight:'R',d:'R',D:'R'};
+document.addEventListener('keydown', e=>{
+  const cmd=KEY[e.key]; if(!cmd||rcOverride||!isConnected) return;
+  e.preventDefault();
+  if(cmd!==lastCmd){lastCmd=cmd;sendWS(cmd);highlightDir(cmd);}
+});
+document.addEventListener('keyup', e=>{
+  if(!KEY[e.key]||rcOverride||!isConnected) return;
+  lastCmd='S'; sendWS('S'); highlightDir('S');
+});
+
+/* ══════════════════════════════════════════
+   OPERATIONAL MODE
+══════════════════════════════════════════ */
+function setMode(mode) {
+  currentMode = mode;
+  highlightModeBtn(mode);
+  sendWS(JSON.stringify({ cmd:'set_mode', mode }));
+  log('Mode set: '+mode,'info');
+  toast('Mode: '+mode.toUpperCase());
+  // Enable/disable joystick based on mode
+  if(mode!=='manual' && joystick) {
+    joystick.destroy(); joystick=null;
+  } else if(mode==='manual' && !joystick && !rcOverride) {
+    initJoystick();
+  }
+}
+
+function highlightModeBtn(mode) {
+  ['manual','autonomous','ai'].forEach(m => {
+    const btn=document.getElementById('btn-'+m);
+    if(!btn) return;
+    btn.classList.toggle('active', m===mode||(m==='auto'&&mode==='autonomous'));
+  });
+  // Special case: autonomous maps to btn-auto
+  const btnAuto=document.getElementById('btn-auto');
+  if(btnAuto) btnAuto.classList.toggle('active', mode==='autonomous');
+}
+
+/* ══════════════════════════════════════════
+   SENSOR TOGGLES
+══════════════════════════════════════════ */
+window.sendSensorToggle = function(side, active) {
+  sendWS(JSON.stringify({ cmd:'sensor_toggle', sensor:'tof_'+side, active }));
+  sendSystemUpdate();
+  toast('TOF '+side+': '+(active?'ON':'OFF'), active?'ok':'err');
+  log('Sensor '+side+(active?' enabled':' disabled'));
+};
+
+/* ══════════════════════════════════════════
+   PATH PLANNER
+══════════════════════════════════════════ */
+const pathCanvas = document.getElementById('path-canvas');
+const pctx = pathCanvas.getContext('2d');
+drawPathGrid();
+
+function drawPathGrid() {
+  const W=pathCanvas.width, H=pathCanvas.height;
+  pctx.clearRect(0,0,W,H);
+  pctx.fillStyle='#060a10'; pctx.fillRect(0,0,W,H);
+  pctx.strokeStyle='#1a2030'; pctx.lineWidth=1;
+  for(let x=0;x<W;x+=30){ pctx.beginPath(); pctx.moveTo(x,0); pctx.lineTo(x,H); pctx.stroke(); }
+  for(let y=0;y<H;y+=30){ pctx.beginPath(); pctx.moveTo(0,y); pctx.lineTo(W,y); pctx.stroke(); }
+  // Draw waypoints
+  waypoints.forEach((wp,i) => {
+    pctx.beginPath(); pctx.arc(wp.x,wp.y,8,0,Math.PI*2);
+    pctx.fillStyle='#3b82f6'; pctx.fill();
+    pctx.fillStyle='#fff'; pctx.font='bold 10px monospace'; pctx.textAlign='center'; pctx.textBaseline='middle';
+    pctx.fillText(i+1,wp.x,wp.y);
+  });
+  // Draw path lines
+  if(waypoints.length>1) {
+    pctx.beginPath(); pctx.moveTo(waypoints[0].x,waypoints[0].y);
+    waypoints.slice(1).forEach(wp=>pctx.lineTo(wp.x,wp.y));
+    pctx.strokeStyle='#3b82f688'; pctx.lineWidth=2; pctx.stroke();
+  }
+  // Car marker
+  pctx.beginPath(); pctx.arc(pathCanvas.width/2,pathCanvas.height/2,10,0,Math.PI*2);
+  pctx.fillStyle='#00d4ff22'; pctx.fill();
+  pctx.strokeStyle='#00d4ff'; pctx.lineWidth=2; pctx.stroke();
+  pctx.fillStyle='#00d4ff'; pctx.font='10px monospace'; pctx.textAlign='center'; pctx.textBaseline='middle';
+  pctx.fillText('CAR',pathCanvas.width/2,pathCanvas.height/2);
+}
+
+window.addWaypoint = function(e) {
+  const rect=pathCanvas.getBoundingClientRect();
+  const scaleX=pathCanvas.width/rect.width, scaleY=pathCanvas.height/rect.height;
+  waypoints.push({ x:(e.clientX-rect.left)*scaleX, y:(e.clientY-rect.top)*scaleY });
+  drawPathGrid();
+  document.getElementById('waypoint-list').textContent=
+    'Waypoints: '+waypoints.map((_,i)=>i+1).join(' → ');
+};
+
+window.clearWaypoints = function() {
+  waypoints.length=0; drawPathGrid();
+  document.getElementById('waypoint-list').textContent='No waypoints set.';
+};
+
+window.sendPath = function() {
+  sendWS(JSON.stringify({ cmd:'set_path', waypoints }));
+  toast('Path sent to car ('+waypoints.length+' WPs)','ok');
+};
+
+/* ══════════════════════════════════════════
+   AI REQUEST
+══════════════════════════════════════════ */
+window.requestAIFrame = function() {
+  sendWS(JSON.stringify({ cmd:'request_ai_frame' }));
+  toast('AI frame requested','info');
+};
+
+/* ══════════════════════════════════════════
+   AI CONFIGURATION
+══════════════════════════════════════════ */
+function loadConfig() {
+  try {
+    const c = JSON.parse(localStorage.getItem('smartcar_config')||'{}');
+    if(c.apikey)    document.getElementById('cfg-apikey').value    = c.apikey;
+    if(c.model) {
+      document.getElementById('cfg-model').value = c.model;
+      const badge = document.getElementById('active-model-badge');
+      if(badge) badge.textContent = c.model;
+    }
+    if(c.interval)  { document.getElementById('cfg-interval').value=c.interval; document.getElementById('interval-label').textContent=c.interval+'s'; }
+    if(c.threshold) { document.getElementById('cfg-threshold').value=c.threshold; document.getElementById('thresh-label').textContent=c.threshold+' cm'; DANGER_CM=parseInt(c.threshold); }
+    const model = c.model || 'qwen2.5vl:7b';
+    document.getElementById('ai-model-display').textContent    = 'Model: '+model;
+    document.getElementById('ai-interval-display').textContent = 'Interval: '+(c.interval||'5')+'s';
+  } catch(_) {}
+}
+
+window.saveConfig = function() {
+  const cfg = {
+    apikey:    document.getElementById('cfg-apikey').value,
+    model:     document.getElementById('cfg-model').value,
+    interval:  document.getElementById('cfg-interval').value,
+  const badge = document.getElementById('active-model-badge');
+  if(badge) badge.textContent = cfg.model;
+    threshold: document.getElementById('cfg-threshold').value,
+  };
+  localStorage.setItem('smartcar_config', JSON.stringify(cfg));
+  document.getElementById('ai-model-display').textContent    = 'Model: '+cfg.model;
+  document.getElementById('ai-interval-display').textContent = 'Interval: '+cfg.interval+'s';
+  toast('Configuration saved to localStorage','ok');
+  log('Config saved','ok');
+};
+
+window.sendConfigTocar = function() {
+  const cfg = {
+    cmd:      'config',
+    model:    document.getElementById('cfg-model').value,
+    interval: parseInt(document.getElementById('cfg-interval').value),
+    threshold:parseInt(document.getElementById('cfg-threshold').value),
+    apikey_set: document.getElementById('cfg-apikey').value.length > 0,
+  };
+  sendWS(JSON.stringify(cfg));
+  sendSystemUpdate();
+  toast('Config pushed to car','ok');
+};
+
+window.resetDefaults = function() {
+  document.getElementById('cfg-apikey').value   = '';
+  document.getElementById('cfg-model').value    = 'qwen2.5vl:7b';
+  document.getElementById('cfg-interval').value = 5;
+  document.getElementById('cfg-threshold').value= 30;
+  document.getElementById('interval-label').textContent = '5s';
+  document.getElementById('thresh-label').textContent   = '30 cm';
+  const badge = document.getElementById('active-model-badge');
+  if(badge) badge.textContent = 'qwen2.5vl:7b';
+  DANGER_CM = 30;
+  localStorage.removeItem('smartcar_config');
+  toast('Reset to defaults','info');
+  log('Defaults restored','info');
+};
+
+window.togglePassword = function(id) {
+  const inp = document.getElementById(id);
+  const eye = document.getElementById(id+'-eye');
+  if(inp.type==='password'){inp.type='text';eye.className='fa-solid fa-eye-slash';}
+  else{inp.type='password';eye.className='fa-solid fa-eye';}
+};
+
+// Load config on boot
+loadConfig();
+
+/* ══════════════════════════════════════════
+   INITIAL PAINT
+══════════════════════════════════════════ */
+drawRadar();
+highlightModeBtn('manual');
+// Ensure dashboard is rendered as grid immediately on load
+document.getElementById('page-dashboard').style.display = 'grid';
+</script>
+
+</body>
+</html>
