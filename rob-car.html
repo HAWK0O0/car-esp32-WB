@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SmartCar Mission Control</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+
+<script>
+tailwind.config={darkMode:'class',theme:{extend:{colors:{brand:'#00d4ff',surface:'#0d1117',panel:'#161b22',edge:'#21262d'},fontFamily:{mono:['"Share Tech Mono"','monospace']}}}};
+</script>
+
+<style>
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;padding:0;overflow:hidden}
+body{background:#0d1117;color:#c9d1d9;font-family:'Share Tech Mono',monospace;display:flex;flex-direction:column}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#0d1117}
+::-webkit-scrollbar-thumb{background:#21262d;border-radius:3px}
+.glow{text-shadow:0 0 10px #00d4ff99}
+.glow-card{box-shadow:0 0 18px #00d4ff14,inset 0 0 10px #00d4ff08}
+.panel{background:#161b22;border:1px solid #21262d;border-radius:12px}
+#status-dot{width:11px;height:11px;border-radius:50%;background:#ff4444;display:inline-block;transition:background .3s,box-shadow .3s}
+#status-dot.connected{background:#00ff88;box-shadow:0 0 8px #00ff88}
+#status-dot.connecting{background:#ffaa00;animation:blink .8s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+#sidenav{width:56px;min-height:0;transition:width .25s}
+#sidenav.expanded{width:200px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;cursor:pointer;white-space:nowrap;overflow:hidden;color:#8b949e;transition:background .15s,color .15s}
+.nav-item:hover,.nav-item.active{background:#21262d;color:#00d4ff}
+.nav-label{opacity:0;transition:opacity .2s}
+#sidenav.expanded .nav-label{opacity:1}
+.page{display:none}
+.mode-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:.72rem;letter-spacing:.06em;font-weight:700;cursor:pointer;border:2px solid transparent;transition:all .2s;text-transform:uppercase}
+.mode-btn.manual{border-color:#f97316;color:#f97316}
+.mode-btn.auto{border-color:#3b82f6;color:#3b82f6}
+.mode-btn.ai{border-color:#eab308;color:#eab308}
+.mode-btn.manual.active{background:#f9731622}
+.mode-btn.auto.active{background:#3b82f622}
+.mode-btn.ai.active{background:#eab30822}
+.tog-wrap{position:relative;width:36px;height:20px;flex-shrink:0}
+.tog-wrap input{opacity:0;width:0;height:0;position:absolute}
+.tog-slider{position:absolute;inset:0;background:#21262d;border-radius:20px;cursor:pointer;transition:background .2s}
+.tog-slider:before{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:#8b949e;border-radius:50%;transition:.2s}
+.tog-wrap input:checked+.tog-slider{background:#00d4ff33;border:1px solid #00d4ff}
+.tog-wrap input:checked+.tog-slider:before{transform:translateX(16px);background:#00d4ff}
+#battery-bar{height:7px;border-radius:4px;background:linear-gradient(90deg,#00d4ff,#00ff88);transition:width .5s}
+#battery-bar.low{background:linear-gradient(90deg,#ff6b35,#ff3c3c)}
+#compass-wrap{position:relative;width:96px;height:96px;border-radius:50%;border:2px solid #21262d;background:radial-gradient(circle,#161b22,#0d1117);margin:0 auto}
+#compass-needle{width:4px;height:44px;background:linear-gradient(to bottom,#ff4444 50%,#00d4ff 50%);border-radius:2px;position:absolute;left:50%;top:50%;transform-origin:bottom center;transform:translateX(-50%) translateY(-100%) rotate(0deg);transition:transform .4s ease}
+#radar-canvas{display:block;margin:0 auto;width:100%;max-width:280px}
+#car3d-wrap{position:relative;overflow:hidden;border-radius:10px;background:#060a10;line-height:0}
+#car3d-canvas{width:100%;height:240px;display:block;cursor:grab}
+#car3d-canvas:active{cursor:grabbing}
+.tof-overlay{position:absolute;background:#0d1117cc;border:1px solid #21262d;border-radius:6px;padding:3px 7px;font-size:.72rem;color:#00d4ff;text-shadow:0 0 6px #00d4ff66;pointer-events:none;white-space:nowrap;transition:color .3s,border-color .3s}
+.tof-overlay.danger{color:#ff4444;border-color:#ff4444;text-shadow:0 0 6px #ff4444}
+#joystick-zone{width:160px;height:160px;border-radius:50%;background:rgba(0,212,255,.05);border:2px solid #21262d;position:relative;margin:0 auto;transition:background .3s,border-color .3s}
+#joystick-zone.rc-active{background:rgba(255,60,60,.15)!important;border-color:#ff3c3c!important}
+#rc-label{display:none;color:#ff4444;font-size:.68rem;letter-spacing:.1em;text-align:center;margin-top:5px;text-shadow:0 0 6px #ff4444;animation:blink 1s infinite}
+#rc-label.visible{display:block}
+#ws-log{height:90px;overflow-y:auto;font-size:.6rem;color:#8b949e;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:5px 8px}
+#ws-log p{margin:0;line-height:1.7}
+#ws-log p.err{color:#ff6b6b}
+#ws-log p.ok{color:#00ff88}
+#ws-log p.info{color:#00d4ff}
+.cfg-input{width:100%;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 12px;color:#c9d1d9;font-family:'Share Tech Mono',monospace;font-size:.82rem;outline:none;transition:border-color .2s}
+.cfg-input:focus{border-color:#00d4ff;box-shadow:0 0 0 2px #00d4ff22}
+.cfg-select-wrap{position:relative}
+.cfg-select-wrap::after{content:'\f0d7';font-family:'Font Awesome 6 Free';font-weight:900;position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#00d4ff;pointer-events:none;font-size:.75rem}
+select.cfg-input{padding-right:32px;background-image:none;cursor:pointer;appearance:none;-webkit-appearance:none}
+select.cfg-input option{background:#161b22;color:#c9d1d9}
+#gemini-text{min-height:60px;white-space:pre-wrap;word-break:break-word}
+#ai-image{width:100%;max-height:180px;object-fit:cover;border-radius:8px;border:1px solid #21262d;background:#0d1117}
+.tof-mini{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tof-mini .val{font-size:1.1rem;font-weight:bold;color:#00d4ff;text-shadow:0 0 5px #00d4ff55}
+.tof-mini .val.danger{color:#ff4444;text-shadow:0 0 5px #ff4444}
+.tof-mini .val.inactive{color:#8b949e;text-shadow:none}
+.tof-mini .lbl{font-size:.58rem;color:#8b949e;letter-spacing:.1em;text-transform:uppercase}
+input[type=range]{accent-color:#00d4ff}
+#toast{position:fixed;top:54px;right:16px;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:10px 16px;font-size:.75rem;color:#c9d1d9;z-index:600;transform:translateX(130%);transition:transform .3s;max-width:280px;pointer-events:none}
+#toast.show{transform:translateX(0)}
+#toast.toast-ok{border-color:#00ff88;color:#00ff88}
+#toast.toast-err{border-color:#ff4444;color:#ff4444}
+.sensor-card{background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;transition:border-color .2s}
+.sensor-card:hover{border-color:#00d4ff44}
+.sensor-card .s-name{font-size:.78rem;color:#c9d1d9;letter-spacing:.05em;margin-bottom:2px}
+.sensor-card .s-val{font-size:.7rem;color:#00d4ff;text-shadow:0 0 5px #00d4ff44}
+.sensor-card .s-val.danger{color:#ff4444;text-shadow:0 0 5px #ff444444}
+.sensor-card .s-val.inactive{color:#8b949e;text-shadow:none}
+.ai-key-section{display:none}
+.ai-key-section.visible{display:block}
+#ai-cmd-input{width:100%;min-height:52px;resize:vertical;background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 12px;color:#c9d1d9;font-family:'Share Tech Mono',monospace;font-size:.78rem;outline:none;transition:border-color .2s}
+#ai-cmd-input:focus{border-color:#eab308;box-shadow:0 0 0 2px #eab30822}
+.dir-ind{background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:3px 0;color:#8b949e;font-size:.62rem;transition:all .15s}
+#lang-select{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:6px 8px;color:#c9d1d9;font-family:'Share Tech Mono',monospace;font-size:.72rem;outline:none}
+</style>
+</head>
+
+<body>
+<div id="toast"></div>
+
+<header id="topbar" class="flex-shrink-0 bg-[#0d1117] border-b border-[#21262d] px-4 py-2 flex flex-wrap items-center gap-3 z-40">
+  <button onclick="toggleNav()" class="text-[#8b949e] hover:text-[#00d4ff] text-lg mr-1 transition-colors">
+    <i class="fa-solid fa-bars"></i>
+  </button>
+  <i class="fa-solid fa-robot text-[#00d4ff] text-xl glow"></i>
+  <span class="text-[#00d4ff] font-bold tracking-widest glow text-base">SMARTCAR</span>
+  <span id="mission-label" class="text-[#8b949e] text-[10px] tracking-widest hidden sm:inline">MISSION CONTROL</span>
+  <div class="flex items-center gap-2 flex-1 min-w-[170px] max-w-xs ml-3">
+    <label id="ws-label" class="text-[#8b949e] text-xs whitespace-nowrap">WS:</label>
+    <input id="ip-input" type="text" value="10.95.118.125" placeholder="IP Address" class="flex-1 bg-[#161b22] border border-[#21262d] rounded-md px-3 py-1.5 text-xs text-[#c9d1d9] focus:outline-none focus:border-[#00d4ff] transition"/>
+  </div>
+  <button onclick="toggleConnection()" id="connect-btn" class="px-3 py-1.5 rounded-md text-xs font-semibold bg-[#00d4ff] text-[#0d1117] hover:bg-[#00b8d9] active:scale-95 transition-all select-none"><i class="fa-solid fa-plug mr-1"></i>Connect</button>
+  <div class="flex items-center gap-2">
+    <span id="status-dot"></span>
+    <span id="status-label" class="text-xs text-[#8b949e]">Disconnected</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <label id="lang-label" for="lang-select" class="text-[#8b949e] text-xs whitespace-nowrap">Language</label>
+    <select id="lang-select">
+      <option value="en">EN</option>
+      <option value="ar">AR</option>
+      <option value="zh">中文</option>
+    </select>
+  </div>
+  <div class="flex gap-2 ml-2">
+    <button class="mode-btn manual active" id="btn-manual" onclick="setMode('manual')"><i class="fa-solid fa-gamepad"></i><span class="hidden sm:inline">Manual</span></button>
+    <button class="mode-btn auto" id="btn-auto" onclick="setMode('autonomous')"><i class="fa-solid fa-route"></i><span class="hidden sm:inline">Auto</span></button>
+    <button class="mode-btn ai" id="btn-ai" onclick="setMode('ai')"><i class="fa-solid fa-brain"></i><span class="hidden sm:inline">AI</span></button>
+  </div>
+  <div class="flex-1"></div>
+  <div id="clock" class="text-[10px] text-[#8b949e] tabular-nums"></div>
+</header>
+
+<div class="flex flex-1 min-h-0 overflow-hidden">
+  <nav id="sidenav" class="bg-[#0d1117] border-r border-[#21262d] flex flex-col gap-1 py-3 px-2 flex-shrink-0 overflow-hidden z-30">
+    <div class="nav-item active" id="nav-home" onclick="showPage('home')"><i class="fa-solid fa-house fa-fw"></i><span class="nav-label text-xs">Home</span></div>
+    <div class="nav-item" id="nav-control" onclick="showPage('control')"><i class="fa-solid fa-gamepad fa-fw"></i><span class="nav-label text-xs">Control</span></div>
+    <div class="nav-item mt-auto" id="nav-settings" onclick="showPage('settings')"><i class="fa-solid fa-sliders fa-fw"></i><span class="nav-label text-xs">Settings</span></div>
+  </nav>
+
+  <div class="flex-1 overflow-y-auto relative" id="page-host">
+    <div id="page-home" class="page p-3 gap-3 grid grid-cols-1 lg:grid-cols-3">
+      <div class="panel glow-card p-4 flex flex-col gap-3 lg:col-span-2">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-car text-[#00d4ff]"></i>
+          <h2 id="home-title-sensor" class="text-xs font-bold tracking-widest uppercase">3D Sensor Viz</h2>
+          <span id="drag-orbit-label" class="ml-auto text-[10px] text-[#8b949e]">Drag to orbit</span>
+        </div>
+        <div id="car3d-wrap">
+          <canvas id="car3d-canvas"></canvas>
+          <div id="tof-label-front" class="tof-overlay" style="top:6px;left:50%;transform:translateX(-50%)"><i class="fa-solid fa-arrow-up text-[8px] mr-1"></i><span id="tof3d-front">- cm</span></div>
+          <div id="tof-label-back" class="tof-overlay" style="bottom:6px;left:50%;transform:translateX(-50%)"><i class="fa-solid fa-arrow-down text-[8px] mr-1"></i><span id="tof3d-back">- cm</span></div>
+          <div id="tof-label-left" class="tof-overlay" style="top:50%;left:6px;transform:translateY(-50%)"><i class="fa-solid fa-arrow-left text-[8px] mr-1"></i><span id="tof3d-left">- cm</span></div>
+          <div id="tof-label-right" class="tof-overlay" style="top:50%;right:6px;transform:translateY(-50%)"><span id="tof3d-right">- cm</span><i class="fa-solid fa-arrow-right text-[8px] ml-1"></i></div>
+        </div>
+        <div class="grid grid-cols-4 gap-2">
+          <div class="tof-mini"><div class="val" id="tof-front">-</div><div class="lbl" id="lbl-front">Front</div><label class="tog-wrap mt-1"><input type="checkbox" id="tog-front" checked onchange="sendSensorToggle('front',this.checked)"><span class="tog-slider"></span></label></div>
+          <div class="tof-mini"><div class="val" id="tof-back">-</div><div class="lbl" id="lbl-back">Back</div><label class="tog-wrap mt-1"><input type="checkbox" id="tog-back" checked onchange="sendSensorToggle('back',this.checked)"><span class="tog-slider"></span></label></div>
+          <div class="tof-mini"><div class="val" id="tof-left">-</div><div class="lbl" id="lbl-left">Left</div><label class="tog-wrap mt-1"><input type="checkbox" id="tog-left" checked onchange="sendSensorToggle('left',this.checked)"><span class="tog-slider"></span></label></div>
+          <div class="tof-mini"><div class="val" id="tof-right">-</div><div class="lbl" id="lbl-right">Right</div><label class="tog-wrap mt-1"><input type="checkbox" id="tog-right" checked onchange="sendSensorToggle('right',this.checked)"><span class="tog-slider"></span></label></div>
+        </div>
+        <div class="flex items-center gap-3 px-1">
+          <i class="fa-solid fa-compass text-[#3b82f6] text-sm"></i>
+          <span class="text-[10px] text-[#8b949e] uppercase tracking-wider">BNO055 IMU</span>
+          <span id="heading-label-home" class="text-[10px] text-[#8b949e]">Heading:</span>
+          <span id="heading-val" class="text-[#00d4ff] font-bold text-xs">-</span>
+          <label class="tog-wrap ml-auto"><input type="checkbox" id="tog-imu" checked onchange="sendSensorToggle('imu',this.checked)"><span class="tog-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <div class="panel glow-card p-3 flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-satellite-dish text-[#00d4ff]"></i>
+            <h2 id="home-title-radar" class="text-xs font-bold tracking-widest uppercase">Radar</h2>
+            <label class="tog-wrap ml-1"><input type="checkbox" id="tog-radar" checked onchange="sendSensorToggle('radar',this.checked)"><span class="tog-slider"></span></label>
+            <button id="radar-toggle-btn" onclick="toggleRadar()" class="ml-auto px-2 py-0.5 text-[10px] rounded-md bg-[#ff444422] border border-[#ff4444] text-[#ff4444] hover:bg-[#ff444433] transition font-bold"><i class="fa-solid fa-stop mr-1"></i>Stop</button>
+          </div>
+          <canvas id="radar-canvas" width="260" height="130"></canvas>
+          <div class="flex justify-between text-[9px] text-[#8b949e] px-1 -mt-1"><span>180°</span><span>90°</span><span>0°</span></div>
+          <div class="flex justify-between text-[9px] px-1">
+            <span class="text-[#8b949e]">∠ <span id="radar-angle-display" class="text-[#00d4ff] font-bold">-</span>°</span>
+            <span class="text-[#8b949e]">↔ <span id="radar-dist-display" class="text-[#00d4ff] font-bold">-</span> cm</span>
+          </div>
+          <canvas id="hist-canvas" width="260" height="70" class="w-full border border-[#21262d] rounded bg-[#0d1117]"></canvas>
+        </div>
+        <div class="panel glow-card p-3 flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-camera text-[#00d4ff]"></i>
+            <h2 id="home-title-camera" class="text-xs font-bold tracking-widest uppercase">Camera</h2>
+            <label class="tog-wrap ml-1"><input type="checkbox" id="tog-camera" checked onchange="sendSensorToggle('camera',this.checked)"><span class="tog-slider"></span></label>
+            <span class="ml-auto text-[9px] text-[#8b949e]" id="ai-ts">No data</span>
+          </div>
+          <img id="ai-image" src="" alt="Camera feed" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22160%22><rect fill=%22%230d1117%22 width=%22400%22 height=%22160%22/><text fill=%22%2321262d%22 font-family=%22monospace%22 font-size=%2214%22 x=%22200%22 y=%2285%22 text-anchor=%22middle%22>No%20Feed</text></svg>'"/>
+          <div class="flex items-center gap-2">
+            <div class="tof-mini flex-1 py-1"><div class="val text-[.85rem]" id="ai-api-status">-</div><div class="lbl" id="api-label">API</div></div>
+            <button id="btn-ai-capture" onclick="requestAIFrame()" class="px-2 py-1 text-[10px] rounded-md bg-[#eab30822] border border-[#eab308] text-[#eab308] hover:bg-[#eab30833] transition"><i class="fa-solid fa-rotate mr-1"></i>Capture</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel glow-card p-3 flex flex-col gap-2 lg:col-span-2">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-microchip text-[#eab308]"></i>
+          <h2 id="home-title-ai" class="text-xs font-bold tracking-widest uppercase">AI Analysis</h2>
+          <span id="ai-model-display" class="ml-auto text-[9px] text-[#8b949e]">Model: -</span>
+        </div>
+        <div id="gemini-text" class="flex-1 bg-[#0d1117] border border-[#21262d] rounded-lg p-3 text-xs text-[#c9d1d9] leading-relaxed">Awaiting data...</div>
+        <div class="text-[9px] text-[#8b949e] flex justify-end"><span id="ai-interval-display">Interval: -s</span></div>
+      </div>
+
+      <div class="panel glow-card p-3 flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-terminal text-[#eab308]"></i>
+          <h2 id="home-title-command" class="text-xs font-bold tracking-widest uppercase">AI Command</h2>
+        </div>
+        <textarea id="ai-cmd-input" placeholder="Type instruction for AI... e.g. 'Avoid obstacles and move to open area'"></textarea>
+        <button id="btn-send-ai" onclick="sendAICommand()" class="w-full px-3 py-2 rounded-lg text-xs font-bold bg-[#eab30822] border border-[#eab308] text-[#eab308] hover:bg-[#eab30833] transition active:scale-95"><i class="fa-solid fa-paper-plane mr-2"></i>Send to AI Controller</button>
+      </div>
+
+      <div class="panel glow-card p-3 flex flex-col gap-2 lg:col-span-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-terminal text-[#8b949e] text-xs"></i>
+          <h2 id="home-title-log" class="text-[10px] font-bold tracking-widest uppercase text-[#8b949e]">WebSocket Log</h2>
+          <button id="clear-log-btn" onclick="document.getElementById('ws-log').innerHTML=''" class="ml-auto text-[10px] text-[#8b949e] hover:text-[#ff4444] transition px-2 py-0.5 rounded border border-[#21262d] hover:border-[#ff4444]"><i class="fa-solid fa-trash-can mr-1"></i>Clear</button>
+        </div>
+        <div id="ws-log"></div>
+      </div>
+    </div>
+
+    <div id="page-control" class="page p-4 gap-4 grid grid-cols-1 md:grid-cols-2">
+      <div class="panel glow-card p-4 flex flex-col gap-3 items-center">
+        <div class="flex items-center gap-2 w-full">
+          <i class="fa-solid fa-gamepad text-[#00d4ff]"></i>
+          <h2 id="control-title-nav" class="text-xs font-bold tracking-widest uppercase">Navigation</h2>
+          <span id="control-keys-label" class="ml-auto text-[10px] text-[#8b949e]">WASD / ↑↓←→</span>
+        </div>
+        <div id="joystick-zone"></div>
+        <div id="rc-label"><i class="fa-solid fa-triangle-exclamation mr-1"></i>MANUAL RC ACTIVE</div>
+        <div class="text-xs text-[#8b949e] text-center">CMD: <span id="cmd-display" class="text-[#00d4ff] font-bold">S</span></div>
+        <div class="grid grid-cols-3 gap-1 w-24 text-center text-[10px] select-none">
+          <div></div><div id="ind-F" class="dir-ind">F</div><div></div>
+          <div id="ind-L" class="dir-ind">L</div><div id="ind-S" class="dir-ind">●</div><div id="ind-R" class="dir-ind">R</div>
+          <div></div><div id="ind-B" class="dir-ind">B</div><div></div>
+        </div>
+      </div>
+
+      <div class="panel glow-card p-4 flex flex-col gap-4">
+        <div class="flex items-center gap-2"><i class="fa-solid fa-compass text-[#00d4ff]"></i><h2 id="control-title-heading" class="text-xs font-bold tracking-widest uppercase">Heading & Power</h2></div>
+        <div class="flex flex-col items-center gap-2">
+          <div id="compass-wrap">
+            <span class="absolute text-[9px] text-[#8b949e]" style="top:3px;left:50%;transform:translateX(-50%)">N</span>
+            <span class="absolute text-[9px] text-[#8b949e]" style="bottom:3px;left:50%;transform:translateX(-50%)">S</span>
+            <span class="absolute text-[9px] text-[#8b949e]" style="left:3px;top:50%;transform:translateY(-50%)">W</span>
+            <span class="absolute text-[9px] text-[#8b949e]" style="right:3px;top:50%;transform:translateY(-50%)">E</span>
+            <div id="compass-needle"></div>
+          </div>
+          <div class="text-xs text-[#8b949e]"><span id="heading-label-control">Heading:</span> <span id="ctrl-heading-val" class="text-[#00d4ff] font-bold">-</span></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-1"><span id="battery-label" class="text-[#8b949e]"><i class="fa-solid fa-battery-three-quarters mr-1"></i>Battery</span><span id="battery-pct" class="text-[#00d4ff] font-bold">-%</span></div>
+          <div class="w-full h-2 bg-[#0d1117] rounded-full border border-[#21262d] overflow-hidden"><div id="battery-bar" style="width:0%"></div></div>
+          <div id="battery-warn" class="hidden text-[10px] text-[#ff4444] mt-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Low battery</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="tof-mini"><div class="val text-[1rem]" id="stat-fps">-</div><div class="lbl" id="lbl-fps">Msg/sec</div></div>
+          <div class="tof-mini"><div class="val text-[1rem]" id="stat-total">0</div><div class="lbl" id="lbl-total">Total Msgs</div></div>
+        </div>
+        <div class="tof-mini"><div class="val text-[.9rem]" id="sys-mode-display">-</div><div class="lbl" id="lbl-active-mode">Active Mode</div></div>
+      </div>
+    </div>
+
+    <div id="page-settings" class="page p-4 gap-4 flex flex-col">
+      <div class="panel glow-card p-4 flex flex-col gap-3">
+        <div class="flex items-center gap-2 mb-1"><i class="fa-solid fa-microchip text-[#00d4ff]"></i><h2 id="settings-title-sensors" class="text-xs font-bold tracking-widest uppercase">Sensor Controls</h2></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="sensor-card"><div><div class="s-name"><i class="fa-solid fa-arrow-up mr-2 text-[#00d4ff]"></i>ToF Front <span class="text-[9px] text-[#8b949e]">VL53L0X</span></div><div class="s-val" id="s-dist-front">- cm</div><div class="text-[9px] text-[#8b949e] mt-0.5">I2C · XSHUT PB12 · max 2 m</div></div><label class="tog-wrap"><input type="checkbox" id="stog-front" checked onchange="syncSensorToggle('front',this.checked)"><span class="tog-slider"></span></label></div>
+          <div class="sensor-card"><div><div class="s-name"><i class="fa-solid fa-arrow-down mr-2 text-[#00d4ff]"></i>ToF Back <span class="text-[9px] text-[#8b949e]">VL53L0X</span></div><div class="s-val" id="s-dist-back">- cm</div><div class="text-[9px] text-[#8b949e] mt-0.5">I2C · XSHUT PB13 · max 2 m</div></div><label class="tog-wrap"><input type="checkbox" id="stog-back" checked onchange="syncSensorToggle('back',this.checked)"><span class="tog-slider"></span></label></div>
+          <div class="sensor-card"><div><div class="s-name"><i class="fa-solid fa-arrow-left mr-2 text-[#00d4ff]"></i>ToF Left <span class="text-[9px] text-[#8b949e]">VL53L0X</span></div><div class="s-val" id="s-dist-left">- cm</div><div class="text-[9px] text-[#8b949e] mt-0.5">I2C · XSHUT PB14 · max 2 m</div></div><label class="tog-wrap"><input type="checkbox" id="stog-left" checked onchange="syncSensorToggle('left',this.checked)"><span class="tog-slider"></span></label></div>
+          <div class="sensor-card"><div><div class="s-name"><i class="fa-solid fa-arrow-right mr-2 text-[#00d4ff]"></i>ToF Right <span class="text-[9px] text-[#8b949e]">VL53L0X</span></div><div class="s-val" id="s-dist-right">- cm</div><div class="text-[9px] text-[#8b949e] mt-0.5">I2C · XSHUT PB15 · max 2 m</div></div><label class="tog-wrap"><input type="checkbox" id="stog-right" checked onchange="syncSensorToggle('right',this.checked)"><span class="tog-slider"></span></label></div>
+          <div class="sensor-card"><div><div class="s-name"><i class="fa-solid fa-compass mr-2 text-[#3b82f6]"></i>IMU BNO055</div><div class="s-val" id="s-imu-heading">- °</div><div class="text-[9px] text-[#8b949e] mt-0.5">Cortex-M0 · Sensor Fusion · PID Setpoint</div></div><label class="tog-wrap"><input type="checkbox" id="stog-imu" checked onchange="syncSensorToggle('imu',this.checked)"><span class="tog-slider"></span></label></div>
+          <div class="sensor-card"><div><div class="s-name"><i class="fa-solid fa-satellite-dish mr-2 text-[#00d4ff]"></i>Radar HC-SR04B</div><div class="s-val" id="s-radar-dist">- cm @ -°</div><div class="text-[9px] text-[#8b949e] mt-0.5">Servo 180° sweep · Ultrasonic</div></div><label class="tog-wrap"><input type="checkbox" id="stog-radar" checked onchange="syncSensorToggle('radar',this.checked)"><span class="tog-slider"></span></label></div>
+          <div class="sensor-card sm:col-span-2"><div><div class="s-name"><i class="fa-solid fa-camera mr-2 text-[#eab308]"></i>Camera ESP32-S3-CAM OV2640</div><div class="s-val" id="s-camera-status">-</div><div class="text-[9px] text-[#8b949e] mt-0.5">AI-accelerated · JPEG/Base64 · 10s interval</div></div><label class="tog-wrap"><input type="checkbox" id="stog-camera" checked onchange="syncSensorToggle('camera',this.checked)"><span class="tog-slider"></span></label></div>
+        </div>
+      </div>
+
+      <div class="panel glow-card p-4 flex flex-col gap-4">
+        <div class="flex items-center gap-2 mb-1"><i class="fa-solid fa-triangle-exclamation text-[#ff4444]"></i><h2 id="settings-title-thresholds" class="text-xs font-bold tracking-widest uppercase">Proximity & Stop Thresholds</h2></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="flex flex-col gap-4">
+            <div>
+              <label id="danger-label" class="block text-[10px] text-[#8b949e] uppercase tracking-widest">Danger Alert Distance: <span id="thresh-label" class="text-[#ff4444] font-bold">30 cm</span></label>
+              <input type="range" id="cfg-threshold" min="5" max="200" value="30" step="5" oninput="document.getElementById('thresh-label').textContent=this.value+' cm';DANGER_CM=parseInt(this.value,10)" class="w-full mt-2"/>
+              <div class="flex justify-between text-[9px] text-[#8b949e]"><span>5 cm</span><span>1 m</span><span>2 m</span></div>
+            </div>
+            <div>
+              <label id="stop-distance-label" class="block text-[10px] text-[#8b949e] uppercase tracking-widest">Emergency Stop Distance: <span id="stop-label" class="text-[#ff4444] font-bold">20 cm</span></label>
+              <input type="range" id="cfg-stop-dist" min="5" max="150" value="20" step="5" oninput="document.getElementById('stop-label').textContent=this.value+' cm';STOP_CM=parseInt(this.value,10)" class="w-full mt-2"/>
+              <div class="flex justify-between text-[9px] text-[#8b949e]"><span>5 cm</span><span>75 cm</span><span>150 cm</span></div>
+            </div>
+            <div>
+              <label id="ai-range-title" class="block text-[10px] text-[#8b949e] uppercase tracking-widest">AI Capture Trigger Range: <span id="ai-range-label" class="text-[#eab308] font-bold">50 cm</span></label>
+              <input type="range" id="cfg-ai-range" min="10" max="300" value="50" step="10" oninput="document.getElementById('ai-range-label').textContent=this.value+' cm'" class="w-full mt-2"/>
+              <div class="flex justify-between text-[9px] text-[#8b949e]"><span>10 cm</span><span>150 cm</span><span>3 m</span></div>
+            </div>
+          </div>
+          <div class="flex flex-col gap-3 justify-end">
+            <button id="btn-save-all-settings" onclick="saveConfig()" class="w-full px-4 py-2.5 rounded-lg text-xs font-bold bg-[#00d4ff] text-[#0d1117] hover:bg-[#00b8d9] transition active:scale-95"><i class="fa-solid fa-floppy-disk mr-2"></i>Save All Settings</button>
+            <button id="btn-push-to-car" onclick="sendConfigTocar()" class="w-full px-4 py-2.5 rounded-lg text-xs font-bold bg-[#00d4ff22] border border-[#00d4ff] text-[#00d4ff] hover:bg-[#00d4ff33] transition active:scale-95"><i class="fa-solid fa-upload mr-2"></i>Push to Car</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel glow-card p-4 flex flex-col gap-4">
+        <div class="flex items-center gap-2 mb-1"><i class="fa-solid fa-brain text-[#eab308]"></i><h2 id="settings-title-ai" class="text-xs font-bold tracking-widest uppercase">AI Configuration</h2></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="flex flex-col gap-4">
+            <div>
+              <label id="vision-model-label" class="block text-[10px] text-[#8b949e] uppercase tracking-widest mb-1">Vision Model</label>
+              <div class="cfg-select-wrap">
+                <select id="cfg-model" class="cfg-input" onchange="onModelChange(this.value)">
+                  <optgroup label="-- Google Gemini (Cloud)" style="color:#8b949e">
+                    <option value="gemini-2.0-flash" selected>gemini-2.0-flash</option>
+                    <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                  </optgroup>
+                  <optgroup label="-- Ollama (Local)" style="color:#8b949e">
+                    <option value="qwen2.5vl:7b">qwen2.5vl:7b (7B)</option>
+                    <option value="qwen2.5vl:3b">qwen2.5vl:3b (3B)</option>
+                    <option value="llava:7b">llava:7b</option>
+                    <option value="llava:13b">llava:13b</option>
+                    <option value="moondream">moondream</option>
+                  </optgroup>
+                  <optgroup label="-- OpenAI (Cloud)" style="color:#8b949e">
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
+                  </optgroup>
+                  <optgroup label="-- Anthropic (Cloud)" style="color:#8b949e">
+                    <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
+                    <option value="claude-3-haiku">claude-3-haiku</option>
+                  </optgroup>
+                </select>
+              </div>
+              <div class="flex items-center gap-2 px-3 py-2 bg-[#0d1117] border border-[#21262d] rounded-lg mt-2">
+                <i class="fa-solid fa-circle-dot text-[#00d4ff] text-[10px]"></i>
+                <span id="active-model-label" class="text-[11px] text-[#8b949e]">Active:</span>
+                <span id="active-model-badge" class="text-[11px] text-[#00d4ff] font-bold">gemini-2.0-flash</span>
+              </div>
+            </div>
+            <div id="key-gemini" class="ai-key-section visible flex flex-col gap-2">
+              <label id="gemini-key-label" class="text-[10px] text-[#8b949e] uppercase tracking-widest"><i class="fa-solid fa-key mr-1 text-[#eab308]"></i>Google Gemini API Key</label>
+              <div class="relative"><input id="cfg-apikey" type="password" placeholder="AIzaSy..." class="cfg-input" autocomplete="off"/><button onclick="togglePassword('cfg-apikey')" class="absolute right-3 top-1/2 -translate-y-1/2 text-[#8b949e] hover:text-[#00d4ff] text-xs transition"><i id="cfg-apikey-eye" class="fa-solid fa-eye"></i></button></div>
+              <div class="text-[9px] text-[#8b949e]">Get from <span class="text-[#00d4ff]">aistudio.google.com</span></div>
+            </div>
+            <div id="key-ollama" class="ai-key-section flex flex-col gap-2">
+              <label id="ollama-label" class="text-[10px] text-[#8b949e] uppercase tracking-widest"><i class="fa-solid fa-server mr-1 text-[#00d4ff]"></i>Ollama Host URL</label>
+              <input id="cfg-ollama-host" type="text" placeholder="http://YOUR_PC_IP:11434" class="cfg-input" autocomplete="off"/>
+              <div class="text-[9px] text-[#8b949e]">For ESP32 use your PC LAN IP, not localhost. Example: <span class="text-[#00d4ff]">http://10.95.118.98:11434</span></div>
+            </div>
+            <div id="key-openai" class="ai-key-section flex flex-col gap-2">
+              <label id="openai-key-label" class="text-[10px] text-[#8b949e] uppercase tracking-widest"><i class="fa-solid fa-key mr-1 text-[#00ff88]"></i>OpenAI API Key</label>
+              <div class="relative"><input id="cfg-openai-key" type="password" placeholder="sk-proj-..." class="cfg-input" autocomplete="off"/><button onclick="togglePassword('cfg-openai-key')" class="absolute right-3 top-1/2 -translate-y-1/2 text-[#8b949e] hover:text-[#00d4ff] text-xs transition"><i id="cfg-openai-key-eye" class="fa-solid fa-eye"></i></button></div>
+              <div class="text-[9px] text-[#8b949e]">Get from <span class="text-[#00d4ff]">platform.openai.com</span></div>
+            </div>
+            <div id="key-anthropic" class="ai-key-section flex flex-col gap-2">
+              <label id="anthropic-key-label" class="text-[10px] text-[#8b949e] uppercase tracking-widest"><i class="fa-solid fa-key mr-1 text-[#a78bfa]"></i>Anthropic API Key</label>
+              <div class="relative"><input id="cfg-anthropic-key" type="password" placeholder="sk-ant-..." class="cfg-input" autocomplete="off"/><button onclick="togglePassword('cfg-anthropic-key')" class="absolute right-3 top-1/2 -translate-y-1/2 text-[#8b949e] hover:text-[#00d4ff] text-xs transition"><i id="cfg-anthropic-key-eye" class="fa-solid fa-eye"></i></button></div>
+              <div class="text-[9px] text-[#8b949e]">Get from <span class="text-[#00d4ff]">console.anthropic.com</span></div>
+            </div>
+            <div class="flex flex-col gap-2">
+              <label class="text-[10px] text-[#8b949e] uppercase tracking-widest"><i class="fa-brands fa-github mr-1"></i>GitHub Token <span class="text-[9px] normal-case">(optional)</span></label>
+              <div class="relative"><input id="cfg-github-token" type="password" placeholder="ghp_..." class="cfg-input" autocomplete="off"/><button onclick="togglePassword('cfg-github-token')" class="absolute right-3 top-1/2 -translate-y-1/2 text-[#8b949e] hover:text-[#00d4ff] text-xs transition"><i id="cfg-github-token-eye" class="fa-solid fa-eye"></i></button></div>
+            </div>
+          </div>
+          <div class="flex flex-col gap-4">
+            <div>
+              <label id="capture-interval-label" class="block text-[10px] text-[#8b949e] uppercase tracking-widest">Capture Interval: <span id="interval-label" class="text-[#00d4ff]">10s</span></label>
+              <input type="range" id="cfg-interval" min="1" max="120" value="10" step="1" oninput="document.getElementById('interval-label').textContent=this.value+'s'" class="w-full mt-2"/>
+              <div class="flex justify-between text-[9px] text-[#8b949e]"><span>1s</span><span>60s</span><span>120s</span></div>
+            </div>
+            <div>
+              <label id="system-prompt-label" class="block text-[10px] text-[#8b949e] uppercase tracking-widest mb-1">System Prompt</label>
+              <textarea id="cfg-system-prompt" rows="5" class="cfg-input resize-y text-[.75rem]" placeholder="You are a robot car vision AI. Analyze the image and describe obstacles, path conditions, and recommended action (STOP / GO / TURN LEFT / TURN RIGHT)..."></textarea>
+            </div>
+            <div class="flex flex-col gap-2">
+              <button id="btn-save-local" onclick="saveConfig()" class="w-full px-4 py-2.5 rounded-lg text-xs font-bold bg-[#00d4ff] text-[#0d1117] hover:bg-[#00b8d9] transition active:scale-95"><i class="fa-solid fa-floppy-disk mr-2"></i>Save to localStorage</button>
+              <button id="btn-push-websocket" onclick="sendConfigTocar()" class="w-full px-4 py-2.5 rounded-lg text-xs font-bold bg-[#00d4ff22] border border-[#00d4ff] text-[#00d4ff] hover:bg-[#00d4ff33] transition active:scale-95"><i class="fa-solid fa-upload mr-2"></i>Push to Car (WebSocket)</button>
+              <button id="btn-reset-defaults" onclick="resetDefaults()" class="w-full px-4 py-2.5 rounded-lg text-xs font-bold bg-[#ff444422] border border-[#ff4444] text-[#ff4444] hover:bg-[#ff444433] transition active:scale-95"><i class="fa-solid fa-rotate-left mr-2"></i>Reset Defaults</button>
+            </div>
+            <div class="text-[9px] text-[#8b949e] border-t border-[#21262d] pt-3">Saved in <code class="text-[#00d4ff]">localStorage['smartcar_config']</code>. Keys pushed to ESP32 RAM on Connect.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let ws=null,isConnected=false,rcOverride=false,joystick=null,lastCmd='S';
+let msgCount=0,totalMsgs=0,lastTick=Date.now(),currentMode='manual',lastStatus='disconnected';
+let DANGER_CM=30,STOP_CM=20,radarActive=true,currentLang=localStorage.getItem('smartcar_lang')||'en';
+const SAVED_WS_IP_KEY='smartcar_ws_ip';
+const DEFAULT_WS_IP='10.95.118.125';
+
+const PAGE_DISPLAY={home:'grid',control:'grid',settings:'flex'};
+const LOCALES={en:'en-GB',ar:'ar-SA',zh:'zh-CN'};
+const SENSOR_MAP={front:'tof_front',back:'tof_back',left:'tof_left',right:'tof_right',imu:'imu',radar:'radar',camera:'camera'};
+const I18N={
+  en:{language:'Language',missionControl:'MISSION CONTROL',ws:'WS:',ipPlaceholder:'IP Address',connect:'Connect',disconnect:'Disconnect',connected:'Connected',connecting:'Connecting...',disconnected:'Disconnected',manual:'Manual',auto:'Auto',ai:'AI',home:'Home',control:'Control',settings:'Settings',sensorViz:'3D Sensor Viz',dragOrbit:'Drag to orbit',front:'Front',back:'Back',left:'Left',right:'Right',heading:'Heading',radar:'Radar',stop:'Stop',start:'Start',camera:'Camera',noData:'No data',api:'API',capture:'Capture',aiAnalysis:'AI Analysis',model:'Model',awaitingData:'Awaiting data...',interval:'Interval',aiCommand:'AI Command',aiCommandPlaceholder:"Type instruction for AI... e.g. 'Avoid obstacles and move to open area'",sendAi:'Send to AI Controller',wsLog:'WebSocket Log',clear:'Clear',navigation:'Navigation',controlHint:'WASD / ↑↓←→',manualRc:'MANUAL RC ACTIVE',headingPower:'Heading & Power',battery:'Battery',lowBattery:'Low battery',msgPerSec:'Msg/sec',totalMsgs:'Total Msgs',activeMode:'Active Mode',sensorControls:'Sensor Controls',thresholds:'Proximity & Stop Thresholds',aiConfig:'AI Configuration',dangerAlert:'Danger Alert Distance',emergencyStop:'Emergency Stop Distance',aiRange:'AI Capture Trigger Range',visionModel:'Vision Model',captureInterval:'Capture Interval',systemPrompt:'System Prompt',active:'Active',geminiKey:'Google Gemini API Key',ollamaHost:'Ollama Host URL',openAiKey:'OpenAI API Key',anthropicKey:'Anthropic API Key',saveAll:'Save All Settings',pushToCar:'Push to Car',saveLocal:'Save to localStorage',pushWs:'Push to Car (WebSocket)',reset:'Reset Defaults',invalidIp:'Invalid IP',radarOn:'Radar ON',radarOff:'Radar OFF',frameRequested:'AI frame requested',enterCommand:'Enter a command first',aiCommandSent:'AI command sent',configSaved:'Configuration saved',configPushed:'Config pushed to car',resetDone:'Reset to defaults',noKey:'No Key',apiActive:'Active',noApiKey:'No API Key',rcDisabled:'RC Override - joystick disabled.',rcRestored:'RC cleared - joystick restored.',rcSwitch:'RC cleared - switch to Control tab.'},
+  ar:{language:'اللغة',missionControl:'مركز المهمة',ws:'ويب سوكت:',ipPlaceholder:'عنوان الـ IP',connect:'اتصال',disconnect:'فصل',connected:'متصل',connecting:'جارٍ الاتصال...',disconnected:'غير متصل',manual:'يدوي',auto:'آلي',ai:'ذكاء',home:'هوم',control:'التحكم',settings:'الإعدادات',sensorViz:'عرض الحساسات ثلاثي الأبعاد',dragOrbit:'اسحب للدوران',front:'أمام',back:'خلف',left:'يسار',right:'يمين',heading:'الاتجاه',radar:'الرادار',stop:'إيقاف',start:'تشغيل',camera:'الكاميرا',noData:'لا توجد بيانات',api:'واجهة API',capture:'التقاط',aiAnalysis:'تحليل الذكاء الاصطناعي',model:'الموديل',awaitingData:'بانتظار البيانات...',interval:'الفاصل',aiCommand:'أمر الذكاء الاصطناعي',aiCommandPlaceholder:'اكتب تعليمات للذكاء الاصطناعي... مثال: تجنب العوائق واتجه للمسار المفتوح',sendAi:'أرسل إلى متحكم الذكاء',wsLog:'سجل WebSocket',clear:'مسح',navigation:'الملاحة',controlHint:'WASD / ↑↓←→',manualRc:'التحكم اليدوي مفعل',headingPower:'الاتجاه والطاقة',battery:'البطارية',lowBattery:'البطارية منخفضة',msgPerSec:'رسائل/ث',totalMsgs:'إجمالي الرسائل',activeMode:'الوضع الحالي',sensorControls:'التحكم بالحساسات',thresholds:'حدود القرب والتوقف',aiConfig:'إعدادات الذكاء الاصطناعي',dangerAlert:'مسافة التنبيه الخطر',emergencyStop:'مسافة التوقف الطارئ',aiRange:'مدى تشغيل التقاط الذكاء',visionModel:'موديل الرؤية',captureInterval:'فاصل الالتقاط',systemPrompt:'تعليمات النظام',active:'النشط',geminiKey:'مفتاح Gemini API',ollamaHost:'رابط Ollama',openAiKey:'مفتاح OpenAI API',anthropicKey:'مفتاح Anthropic API',saveAll:'حفظ كل الإعدادات',pushToCar:'إرسال للسيارة',saveLocal:'حفظ في localStorage',pushWs:'إرسال للسيارة عبر WebSocket',reset:'استعادة الافتراضي',invalidIp:'عنوان IP غير صالح',radarOn:'تم تشغيل الرادار',radarOff:'تم إيقاف الرادار',frameRequested:'تم طلب لقطة ذكاء اصطناعي',enterCommand:'اكتب أمرًا أولًا',aiCommandSent:'تم إرسال أمر الذكاء',configSaved:'تم حفظ الإعدادات',configPushed:'تم إرسال الإعدادات للسيارة',resetDone:'تمت استعادة الإعدادات الافتراضية',noKey:'لا يوجد مفتاح',apiActive:'نشط',noApiKey:'لا يوجد مفتاح API',rcDisabled:'تم تعطيل عصا التحكم بسبب تجاوز RC.',rcRestored:'تمت إعادة عصا التحكم بعد إزالة RC.',rcSwitch:'تمت إزالة RC، افتح صفحة التحكم.'},
+  zh:{language:'语言',missionControl:'任务控制中心',ws:'WS:',ipPlaceholder:'IP 地址',connect:'连接',disconnect:'断开',connected:'已连接',connecting:'连接中...',disconnected:'未连接',manual:'手动',auto:'自动',ai:'AI',home:'主页',control:'控制',settings:'设置',sensorViz:'三维传感器视图',dragOrbit:'拖动旋转',front:'前方',back:'后方',left:'左侧',right:'右侧',heading:'朝向',radar:'雷达',stop:'停止',start:'启动',camera:'摄像头',noData:'暂无数据',api:'API',capture:'抓拍',aiAnalysis:'AI 分析',model:'模型',awaitingData:'等待数据...',interval:'间隔',aiCommand:'AI 指令',aiCommandPlaceholder:'输入给 AI 的指令... 例如：避开障碍并移动到开阔区域',sendAi:'发送到 AI 控制器',wsLog:'WebSocket 日志',clear:'清空',navigation:'导航',controlHint:'WASD / ↑↓←→',manualRc:'手动遥控已激活',headingPower:'朝向与电量',battery:'电池',lowBattery:'电量低',msgPerSec:'消息/秒',totalMsgs:'总消息数',activeMode:'当前模式',sensorControls:'传感器控制',thresholds:'距离与急停阈值',aiConfig:'AI 配置',dangerAlert:'危险警报距离',emergencyStop:'紧急停止距离',aiRange:'AI 触发抓拍范围',visionModel:'视觉模型',captureInterval:'抓拍间隔',systemPrompt:'系统提示词',active:'当前',geminiKey:'Gemini API Key',ollamaHost:'Ollama 主机地址',openAiKey:'OpenAI API Key',anthropicKey:'Anthropic API Key',saveAll:'保存全部设置',pushToCar:'发送到小车',saveLocal:'保存到 localStorage',pushWs:'通过 WebSocket 发送到小车',reset:'恢复默认值',invalidIp:'IP 地址无效',radarOn:'雷达已开启',radarOff:'雷达已关闭',frameRequested:'已请求 AI 抓拍',enterCommand:'请先输入指令',aiCommandSent:'AI 指令已发送',configSaved:'配置已保存',configPushed:'配置已发送到小车',resetDone:'已恢复默认设置',noKey:'无密钥',apiActive:'已启用',noApiKey:'无 API 密钥',rcDisabled:'RC 接管，摇杆已禁用。',rcRestored:'RC 已解除，摇杆已恢复。',rcSwitch:'RC 已解除，请切换到控制页。'}
+};
+
+function t(key){return (I18N[currentLang]&&I18N[currentLang][key])||I18N.en[key]||key;}
+function nowText(){return new Date().toLocaleTimeString(LOCALES[currentLang]||'en-GB',{hour12:false});}
+function updateClock(){document.getElementById('clock').textContent=nowText();}
+setInterval(updateClock,1000);
+
+let toastTimer=null;
+function toast(msg,type='info'){const el=document.getElementById('toast');el.textContent=msg;el.className='show '+(type==='ok'?'toast-ok':type==='err'?'toast-err':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3000);}
+function toggleNav(){document.getElementById('sidenav').classList.toggle('expanded');}
+function renderConnectButton(){document.getElementById('connect-btn').innerHTML='<i class="fa-solid '+(isConnected?'fa-plug-circle-xmark':'fa-plug')+' mr-1"></i>'+(isConnected?t('disconnect'):t('connect'));}
+function renderRadarButton(){const btn=document.getElementById('radar-toggle-btn');if(radarActive){btn.innerHTML='<i class="fa-solid fa-stop mr-1"></i>'+t('stop');btn.className='ml-auto px-2 py-0.5 text-[10px] rounded-md bg-[#ff444422] border border-[#ff4444] text-[#ff4444] hover:bg-[#ff444433] transition font-bold';}else{btn.innerHTML='<i class="fa-solid fa-play mr-1"></i>'+t('start');btn.className='ml-auto px-2 py-0.5 text-[10px] rounded-md bg-[#00d4ff22] border border-[#00d4ff] text-[#00d4ff] hover:bg-[#00d4ff33] transition font-bold';}}
+function updateModelTexts(model){const value=model||document.getElementById('cfg-model').value||'-';document.getElementById('active-model-label').textContent=t('active')+':';document.getElementById('active-model-badge').textContent=value;document.getElementById('ai-model-display').textContent=t('model')+': '+value;}
+function updateIntervalText(value){const current=value||document.getElementById('cfg-interval').value||'10';document.getElementById('capture-interval-label').innerHTML=t('captureInterval')+': <span id="interval-label" class="text-[#00d4ff]">'+current+'s</span>';document.getElementById('ai-interval-display').textContent=t('interval')+': '+current+'s';}
+function refreshThresholdLabels(){document.getElementById('danger-label').innerHTML=t('dangerAlert')+': <span id="thresh-label" class="text-[#ff4444] font-bold">'+document.getElementById('cfg-threshold').value+' cm</span>';document.getElementById('stop-distance-label').innerHTML=t('emergencyStop')+': <span id="stop-label" class="text-[#ff4444] font-bold">'+document.getElementById('cfg-stop-dist').value+' cm</span>';document.getElementById('ai-range-title').innerHTML=t('aiRange')+': <span id="ai-range-label" class="text-[#eab308] font-bold">'+document.getElementById('cfg-ai-range').value+' cm</span>';}
+function applyLanguage(){document.documentElement.lang=currentLang;document.documentElement.dir=currentLang==='ar'?'rtl':'ltr';document.getElementById('lang-select').value=currentLang;document.getElementById('lang-label').textContent=t('language');document.getElementById('mission-label').textContent=t('missionControl');document.getElementById('ws-label').textContent=t('ws');document.getElementById('ip-input').placeholder=t('ipPlaceholder');document.querySelector('#btn-manual span').textContent=t('manual');document.querySelector('#btn-auto span').textContent=t('auto');document.querySelector('#btn-ai span').textContent=t('ai');document.querySelector('#nav-home .nav-label').textContent=t('home');document.querySelector('#nav-control .nav-label').textContent=t('control');document.querySelector('#nav-settings .nav-label').textContent=t('settings');document.getElementById('home-title-sensor').textContent=t('sensorViz');document.getElementById('drag-orbit-label').textContent=t('dragOrbit');document.getElementById('lbl-front').textContent=t('front');document.getElementById('lbl-back').textContent=t('back');document.getElementById('lbl-left').textContent=t('left');document.getElementById('lbl-right').textContent=t('right');document.getElementById('heading-label-home').textContent=t('heading')+':';document.getElementById('home-title-radar').textContent=t('radar');document.getElementById('home-title-camera').textContent=t('camera');document.getElementById('api-label').textContent=t('api');document.getElementById('btn-ai-capture').innerHTML='<i class="fa-solid fa-rotate mr-1"></i>'+t('capture');document.getElementById('home-title-ai').textContent=t('aiAnalysis');document.getElementById('home-title-command').textContent=t('aiCommand');document.getElementById('ai-cmd-input').placeholder=t('aiCommandPlaceholder');document.getElementById('btn-send-ai').innerHTML='<i class="fa-solid fa-paper-plane mr-2"></i>'+t('sendAi');document.getElementById('home-title-log').textContent=t('wsLog');document.getElementById('clear-log-btn').innerHTML='<i class="fa-solid fa-trash-can mr-1"></i>'+t('clear');document.getElementById('control-title-nav').textContent=t('navigation');document.getElementById('control-keys-label').textContent=t('controlHint');document.getElementById('rc-label').innerHTML='<i class="fa-solid fa-triangle-exclamation mr-1"></i>'+t('manualRc');document.getElementById('control-title-heading').textContent=t('headingPower');document.getElementById('heading-label-control').textContent=t('heading')+':';document.getElementById('battery-label').innerHTML='<i class="fa-solid fa-battery-three-quarters mr-1"></i>'+t('battery');document.getElementById('battery-warn').innerHTML='<i class="fa-solid fa-triangle-exclamation mr-1"></i>'+t('lowBattery');document.getElementById('lbl-fps').textContent=t('msgPerSec');document.getElementById('lbl-total').textContent=t('totalMsgs');document.getElementById('lbl-active-mode').textContent=t('activeMode');document.getElementById('settings-title-sensors').textContent=t('sensorControls');document.getElementById('settings-title-thresholds').textContent=t('thresholds');document.getElementById('settings-title-ai').textContent=t('aiConfig');document.getElementById('vision-model-label').textContent=t('visionModel');document.getElementById('system-prompt-label').textContent=t('systemPrompt');document.getElementById('gemini-key-label').innerHTML='<i class="fa-solid fa-key mr-1 text-[#eab308]"></i>'+t('geminiKey');document.getElementById('ollama-label').innerHTML='<i class="fa-solid fa-server mr-1 text-[#00d4ff]"></i>'+t('ollamaHost');document.getElementById('openai-key-label').innerHTML='<i class="fa-solid fa-key mr-1 text-[#00ff88]"></i>'+t('openAiKey');document.getElementById('anthropic-key-label').innerHTML='<i class="fa-solid fa-key mr-1 text-[#a78bfa]"></i>'+t('anthropicKey');document.getElementById('btn-save-all-settings').innerHTML='<i class="fa-solid fa-floppy-disk mr-2"></i>'+t('saveAll');document.getElementById('btn-push-to-car').innerHTML='<i class="fa-solid fa-upload mr-2"></i>'+t('pushToCar');document.getElementById('btn-save-local').innerHTML='<i class="fa-solid fa-floppy-disk mr-2"></i>'+t('saveLocal');document.getElementById('btn-push-websocket').innerHTML='<i class="fa-solid fa-upload mr-2"></i>'+t('pushWs');document.getElementById('btn-reset-defaults').innerHTML='<i class="fa-solid fa-rotate-left mr-2"></i>'+t('reset');if(['No data','لا توجد بيانات','暂无数据'].includes(document.getElementById('ai-ts').textContent.trim()))document.getElementById('ai-ts').textContent=t('noData');if(['Awaiting data...','بانتظار البيانات...','等待数据...'].includes(document.getElementById('gemini-text').textContent.trim()))document.getElementById('gemini-text').textContent=t('awaitingData');renderConnectButton();renderRadarButton();setStatus(lastStatus);updateModelTexts();updateIntervalText();refreshThresholdLabels();updateClock();}
+function setLanguage(lang){currentLang=I18N[lang]?lang:'en';localStorage.setItem('smartcar_lang',currentLang);applyLanguage();}
+function showPage(name){document.querySelectorAll('.page').forEach(p=>{p.style.display='none';});const el=document.getElementById('page-'+name);if(!el)return;el.style.display=PAGE_DISPLAY[name]||'flex';document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));const navEl=document.getElementById('nav-'+name);if(navEl)navEl.classList.add('active');if(name==='control'&&currentMode==='manual'&&!rcOverride){if(joystick){joystick.destroy();joystick=null;}initJoystick();}else if(name!=='control'&&joystick){joystick.destroy();joystick=null;}}
+
+async function loadStatus(){const ip=document.getElementById('ip-input').value.trim();if(!ip)return;try{const response=await fetch('http://'+ip+'/status',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);const payload=await response.json();if(payload.system)updateSystem(payload.system);if(payload.latest_image_url||payload.last_analysis){updateAI({latest_image_url:payload.latest_image_url,gemini_analysis:payload.last_analysis});}if(typeof payload.rssi==='number'){const sys={ai_status:{api_configured:payload.system&&payload.system.ai_status?payload.system.ai_status.api_configured:false}};updateSystem(sys);}log('Status synced','ok');}catch(error){log('Status fetch failed: '+error.message,'err');}}
+
+window.toggleConnection=function(){isConnected?disconnect():connect();};
+function connect(){const ip=document.getElementById('ip-input').value.trim();if(!ip)return;if(!/^[a-zA-Z0-9.\-_]+$/.test(ip)){toast(t('invalidIp'),'err');return;}const wsUrl='ws://'+ip+'/ws';setStatus('connecting');log('Connecting to '+wsUrl+' ...','info');try{ws=new WebSocket(wsUrl);}catch(error){setStatus('disconnected');log('Error: '+error.message,'err');return;}ws.onopen=()=>{isConnected=true;localStorage.setItem(SAVED_WS_IP_KEY,ip);setStatus('connected');renderConnectButton();log(t('connected'),'ok');toast(t('connected')+' '+ip,'ok');loadStatus();const saved=JSON.parse(localStorage.getItem('smartcar_config')||'{}');if(saved.apikey||saved.openai_key||saved.anthropic_key||saved.ollama_host)setTimeout(sendConfigTocar,600);};ws.onmessage=(event)=>{msgCount++;totalMsgs++;try{handleMessage(JSON.parse(event.data));}catch(_){}};ws.onclose=()=>{isConnected=false;setStatus('disconnected');renderConnectButton();log(t('disconnected'),'err');toast(t('disconnected'),'err');ws=null;};ws.onerror=()=>log('WS error.','err');}
+function disconnect(){if(ws)ws.close();}
+function setStatus(state){lastStatus=state;document.getElementById('status-dot').className=state;document.getElementById('status-label').textContent=state==='connected'?t('connected'):state==='connecting'?t('connecting'):t('disconnected');}
+function sendWS(message){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(message);}
+setInterval(()=>{const dt=(Date.now()-lastTick)/1000;document.getElementById('stat-fps').textContent=dt>0?(msgCount/dt).toFixed(1):'0';document.getElementById('stat-total').textContent=totalMsgs;msgCount=0;lastTick=Date.now();},1000);
+const logEl=document.getElementById('ws-log');
+function log(message,cls){const p=document.createElement('p');if(cls)p.className=cls;p.textContent='['+nowText()+'] '+message;logEl.appendChild(p);while(logEl.children.length>100)logEl.removeChild(logEl.firstChild);logEl.scrollTop=logEl.scrollHeight;}
+function handleMessage(data){if(data.type==='device_info'){toast('ESP32 IP: '+data.ip+' RSSI: '+data.rssi+' dBm','ok');log('Device IP: '+data.ip+' RSSI: '+data.rssi+' dBm','ok');}if(data.telemetry)updateTelemetry(data.telemetry);if(data.radar)updateRadar(data.radar.angle,data.radar.distance);if(data.ai_insight)updateAI(data.ai_insight);if(data.system)updateSystem(data.system);}
+function updateTelemetry(telemetry){const front=telemetry.tof_front,back=telemetry.tof_back,left=telemetry.tof_left,right=telemetry.tof_right;const fd=typeof front==='object'?front.dist:front,bd=typeof back==='object'?back.dist:back,ld=typeof left==='object'?left.dist:left,rd=typeof right==='object'?right.dist:right;const fa=typeof front==='object'?front.active:true,ba=typeof back==='object'?back.active:true,la=typeof left==='object'?left.active:true,ra=typeof right==='object'?right.active:true;syncToggle('front',fa);syncToggle('back',ba);syncToggle('left',la);syncToggle('right',ra);setTofCard('tof-front',fd,fa);setTofCard('tof-back',bd,ba);setTofCard('tof-left',ld,la);setTofCard('tof-right',rd,ra);update3DOverlay('front',fd,fa);update3DOverlay('back',bd,ba);update3DOverlay('left',ld,la);update3DOverlay('right',rd,ra);updateSensorCard('front',fd,fa);updateSensorCard('back',bd,ba);updateSensorCard('left',ld,la);updateSensorCard('right',rd,ra);updateShaderProximity(fd,bd,ld,rd);if(telemetry.heading!==undefined){const heading=parseFloat(telemetry.heading);['heading-val','ctrl-heading-val'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=heading.toFixed(1)+'°';});const imuEl=document.getElementById('s-imu-heading');if(imuEl)imuEl.textContent=heading.toFixed(1)+'°';document.getElementById('compass-needle').style.transform='translateX(-50%) translateY(-100%) rotate('+heading+'deg)';}if(telemetry.battery!==undefined){const pct=Math.min(100,Math.max(0,parseFloat(telemetry.battery)));document.getElementById('battery-pct').textContent=pct.toFixed(0)+'%';const bar=document.getElementById('battery-bar');bar.style.width=pct+'%';bar.classList.toggle('low',pct<20);document.getElementById('battery-warn').classList.toggle('hidden',pct>=20);}const rc=!!telemetry.rc_override;if(rc!==rcOverride){rcOverride=rc;applyRC(rc);}}
+function syncToggle(side,active){['tog-','stog-'].forEach(prefix=>{const cb=document.getElementById(prefix+side);if(cb&&cb.checked!==active)cb.checked=active;});}
+function setTofCard(id,dist,active){const el=document.getElementById(id);if(!el)return;if(!active){el.textContent='OFF';el.className='val inactive';return;}const value=parseFloat(dist);if(dist===null||dist===undefined||isNaN(value)){el.textContent='-';el.className='val';return;}el.textContent=value.toFixed(0)+' cm';el.className='val'+(value<DANGER_CM?' danger':'');}
+function update3DOverlay(side,dist,active){const label=document.getElementById('tof-label-'+side);const span=document.getElementById('tof3d-'+side);if(!label||!span)return;if(!active){span.textContent='OFF';label.classList.remove('danger');return;}const value=parseFloat(dist);span.textContent=(dist===null||dist===undefined||isNaN(value))?'-':value.toFixed(0)+' cm';label.classList.toggle('danger',!isNaN(value)&&value<DANGER_CM);}
+function updateSensorCard(side,dist,active){const el=document.getElementById('s-dist-'+side);if(!el)return;if(!active){el.textContent='OFF';el.className='s-val inactive';return;}const value=parseFloat(dist);if(dist===null||dist===undefined||isNaN(value)){el.textContent='- cm';el.className='s-val';return;}el.textContent=value.toFixed(0)+' cm';el.className='s-val'+(value<DANGER_CM?' danger':'');}
+function updateSystem(sys){if(sys.operational_mode){document.getElementById('sys-mode-display').textContent=String(sys.operational_mode).toUpperCase();highlightModeBtn(sys.operational_mode);}if(sys.ai_status){const configured=sys.ai_status.api_configured;const apiEl=document.getElementById('ai-api-status');if(apiEl){apiEl.textContent=configured?'OK ✓':t('noKey');apiEl.style.color=configured?'#00ff88':'#ff4444';}const camEl=document.getElementById('s-camera-status');if(camEl)camEl.textContent=configured?t('apiActive'):t('noApiKey');}}
+function updateAI(ai){if(ai.latest_image_url)document.getElementById('ai-image').src=ai.latest_image_url+'?t='+Date.now();if(ai.gemini_analysis!==undefined)document.getElementById('gemini-text').textContent=ai.gemini_analysis;document.getElementById('ai-ts').textContent=nowText();}
+function updateRadar(angleDeg,distCm){if(!radarActive)return;const angle=parseFloat(angleDeg),distance=parseFloat(distCm);document.getElementById('radar-angle-display').textContent=angle.toFixed(1);document.getElementById('radar-dist-display').textContent=distance.toFixed(1);const sensorEl=document.getElementById('s-radar-dist');if(sensorEl)sensorEl.textContent=distance.toFixed(0)+' cm @ '+angle.toFixed(0)+'°';const maxR=200,scale=(Math.min(distance,maxR)/maxR)*RH,rad=(angle*Math.PI)/180,cx=RW/2,cy=RH;blips.push({x:cx+scale*Math.cos(Math.PI-rad),y:cy-scale*Math.sin(rad),age:0});if(blips.length>60)blips.shift();distHistory.push(distance);if(distHistory.length>60)distHistory.shift();sweepAngle=angle;drawRadar();drawHistory();}
+const radarCanvas=document.getElementById('radar-canvas');const rctx=radarCanvas.getContext('2d');const RW=radarCanvas.width,RH=radarCanvas.height;const blips=[],distHistory=[];let sweepAngle=0,idleDir=1;window.toggleRadar=function(){radarActive=!radarActive;renderRadarButton();toast(radarActive?t('radarOn'):t('radarOff'),radarActive?'ok':'info');drawRadar();};function drawRadar(){const cx=RW/2,cy=RH,r=RH;rctx.clearRect(0,0,RW,RH);rctx.fillStyle='#0d1117';rctx.fillRect(0,0,RW,RH);if(!radarActive){rctx.fillStyle='#21262d';rctx.font='bold 11px monospace';rctx.textAlign='center';rctx.textBaseline='middle';rctx.fillText(t('radar')+' OFF',RW/2,RH/2);return;}rctx.save();rctx.beginPath();rctx.arc(cx,cy,r,Math.PI,0,false);rctx.lineTo(cx,cy);rctx.closePath();rctx.clip();for(let i=1;i<=4;i++){const ar=(r/4)*i;rctx.beginPath();rctx.arc(cx,cy,ar,Math.PI,0,false);rctx.strokeStyle=i===4?'#2a3040':'#1a2030';rctx.lineWidth=1;rctx.stroke();rctx.fillStyle='#30404d';rctx.font='8px monospace';rctx.textBaseline='middle';rctx.fillText((50*i)+'cm',cx+ar-24,cy-4);}for(let deg=0;deg<=180;deg+=30){const rad=(deg*Math.PI)/180;rctx.beginPath();rctx.moveTo(cx,cy);rctx.lineTo(cx+r*Math.cos(Math.PI-rad),cy-r*Math.sin(rad));rctx.strokeStyle='#1a2030';rctx.lineWidth=1;rctx.stroke();}const swRad=(sweepAngle*Math.PI)/180,ex=cx+r*Math.cos(Math.PI-swRad),ey=cy-r*Math.sin(swRad);const gradient=rctx.createLinearGradient(cx,cy,ex,ey);gradient.addColorStop(0,'rgba(0,212,255,0)');gradient.addColorStop(1,'rgba(0,212,255,.85)');rctx.beginPath();rctx.moveTo(cx,cy);rctx.lineTo(ex,ey);rctx.strokeStyle=gradient;rctx.lineWidth=2;rctx.stroke();blips.forEach(blip=>{const alpha=Math.max(0,1-blip.age/60);rctx.beginPath();rctx.arc(blip.x,blip.y,4,0,Math.PI*2);rctx.fillStyle='rgba(0,255,136,'+alpha+')';rctx.shadowColor='#00ff88';rctx.shadowBlur=10*alpha;rctx.fill();rctx.shadowBlur=0;blip.age++;});rctx.restore();rctx.beginPath();rctx.arc(cx,cy,r,Math.PI,0,false);rctx.strokeStyle='#21262d';rctx.lineWidth=2;rctx.stroke();rctx.beginPath();rctx.moveTo(0,cy);rctx.lineTo(RW,cy);rctx.strokeStyle='#21262d';rctx.lineWidth=1;rctx.stroke();}
+const histCanvas=document.getElementById('hist-canvas');const hctx=histCanvas.getContext('2d');function drawHistory(){const w=histCanvas.width,h=histCanvas.height;hctx.clearRect(0,0,w,h);hctx.fillStyle='#0d1117';hctx.fillRect(0,0,w,h);if(distHistory.length<2)return;const maxV=200,step=w/59;hctx.beginPath();distHistory.forEach((value,index)=>{const x=index*step,y=h-(value/maxV)*h*0.9-2;index===0?hctx.moveTo(x,y):hctx.lineTo(x,y);});hctx.strokeStyle='#00d4ff';hctx.lineWidth=1.5;hctx.stroke();const threshY=h-(DANGER_CM/maxV)*h*0.9-2;hctx.setLineDash([3,3]);hctx.beginPath();hctx.moveTo(0,threshY);hctx.lineTo(w,threshY);hctx.strokeStyle='#ff4444';hctx.lineWidth=1;hctx.stroke();hctx.setLineDash([]);} (function tick(){if(!isConnected){sweepAngle+=0.5*idleDir;if(sweepAngle>=180)idleDir=-1;if(sweepAngle<=0)idleDir=1;}if(radarActive)drawRadar();requestAnimationFrame(tick);})();
+(function init3D(){const container=document.getElementById('car3d-canvas');const width=container.clientWidth||400,height=240;const renderer=new THREE.WebGLRenderer({canvas:container,antialias:true,alpha:true});renderer.setPixelRatio(window.devicePixelRatio);renderer.setSize(width,height);renderer.setClearColor(0x060a10,1);const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(45,width/height,0.1,100);camera.position.set(0,2.2,4.5);camera.lookAt(0,0,0);scene.add(new THREE.AmbientLight(0x223344,1.5));const keyLight=new THREE.DirectionalLight(0x00d4ff,1.2);keyLight.position.set(3,5,3);scene.add(keyLight);const fillLight=new THREE.DirectionalLight(0x334455,0.6);fillLight.position.set(-3,2,-2);scene.add(fillLight);scene.add(new THREE.GridHelper(10,20,0x21262d,0x21262d));const carGroup=new THREE.Group();scene.add(carGroup);const body=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.35,2.4),new THREE.MeshPhongMaterial({color:0x1a2535,shininess:80,specular:0x00d4ff}));body.position.y=0.38;carGroup.add(body);const cabin=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.30,1.1),new THREE.MeshPhongMaterial({color:0x0d1525,shininess:120,specular:0x00aaff,opacity:0.85,transparent:true}));cabin.position.set(0,0.73,-0.1);carGroup.add(cabin);const wheelGeo=new THREE.CylinderGeometry(0.28,0.28,0.22,18),wheelMat=new THREE.MeshPhongMaterial({color:0x111820});[[0.82,0.28,0.85],[-0.82,0.28,0.85],[0.82,0.28,-0.85],[-0.82,0.28,-0.85]].forEach(position=>{const wheel=new THREE.Mesh(wheelGeo,wheelMat);wheel.rotation.z=Math.PI/2;wheel.position.set(...position);carGroup.add(wheel);const rim=new THREE.Mesh(new THREE.TorusGeometry(0.18,0.04,8,18),new THREE.MeshPhongMaterial({color:0x00d4ff,emissive:0x003344}));rim.rotation.y=Math.PI/2;rim.position.set(...position);carGroup.add(rim);});const accentMat=new THREE.MeshBasicMaterial({color:0x00d4ff});[[0,0.38,1.22,1.4,0.04,0.04],[0,0.38,-1.22,1.4,0.04,0.04]].forEach(([x,y,z,sx,sy,sz])=>{const strip=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),accentMat);strip.position.set(x,y,z);carGroup.add(strip);});const vertexShader='varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}';const fragmentShader='uniform float time;uniform float intensity;varying vec2 vUv;void main(){vec2 c=vec2(.5,.5);float dist=length(vUv-c);float wave=sin(dist*18.-time*8.)*.5+.5;float mask=smoothstep(.5,.0,dist);float alpha=wave*mask*intensity*.7;gl_FragColor=vec4(1.,.1,.05,alpha);}';function makeRipple(w,h,pos,rot){const mat=new THREE.ShaderMaterial({vertexShader:vertexShader,fragmentShader:fragmentShader,uniforms:{time:{value:0},intensity:{value:0}},transparent:true,depthWrite:false,side:THREE.DoubleSide});const mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat);mesh.position.set(...pos);if(rot)mesh.rotation.set(...rot);carGroup.add(mesh);return mat;}window._rippleMats={front:makeRipple(1.4,0.35,[0,0.38,1.22],[0,0,0]),back:makeRipple(1.4,0.35,[0,0.38,-1.22],[0,Math.PI,0]),left:makeRipple(2.4,0.35,[0.71,0.38,0],[0,Math.PI/2,0]),right:makeRipple(2.4,0.35,[-0.71,0.38,0],[0,-Math.PI/2,0])};let isDragging=false,prevX=0,prevY=0;container.addEventListener('mousedown',event=>{isDragging=true;prevX=event.clientX;prevY=event.clientY;});window.addEventListener('mouseup',()=>{isDragging=false;});window.addEventListener('mousemove',event=>{if(!isDragging)return;carGroup.rotation.y+=(event.clientX-prevX)*0.01;camera.position.y=Math.max(0.5,Math.min(5,camera.position.y-(event.clientY-prevY)*0.02));camera.lookAt(0,0,0);prevX=event.clientX;prevY=event.clientY;});container.addEventListener('touchstart',event=>{window._tPrev=event.touches[0];});container.addEventListener('touchmove',event=>{if(!window._tPrev)return;carGroup.rotation.y+=(event.touches[0].clientX-window._tPrev.clientX)*0.012;window._tPrev=event.touches[0];event.preventDefault();},{passive:false});const clock3d=new THREE.Clock();(function animate3D(){requestAnimationFrame(animate3D);const elapsed=clock3d.getElapsedTime();carGroup.rotation.y+=0.002;Object.values(window._rippleMats).forEach(mat=>mat.uniforms.time.value=elapsed);renderer.render(scene,camera);})();window.addEventListener('resize',()=>{const newWidth=container.clientWidth;renderer.setSize(newWidth,height);camera.aspect=newWidth/height;camera.updateProjectionMatrix();});})();
+function updateShaderProximity(fd,bd,ld,rd){if(!window._rippleMats)return;const calc=dist=>{const value=parseFloat(dist);return(!isNaN(value)&&value<DANGER_CM)?Math.min(1,(DANGER_CM-value)/DANGER_CM):0;};window._rippleMats.front.uniforms.intensity.value=calc(fd);window._rippleMats.back.uniforms.intensity.value=calc(bd);window._rippleMats.left.uniforms.intensity.value=calc(ld);window._rippleMats.right.uniforms.intensity.value=calc(rd);}
+function initJoystick(){joystick=nipplejs.create({zone:document.getElementById('joystick-zone'),mode:'static',position:{left:'50%',top:'50%'},color:'#00d4ff',size:110,restOpacity:0.45});joystick.on('move',(_,data)=>{if(rcOverride||!isConnected)return;const angle=data.angle.degree;const cmd=angle>=45&&angle<135?'F':angle>=135&&angle<225?'L':angle>=225&&angle<315?'B':'R';if(cmd!==lastCmd){lastCmd=cmd;sendWS(cmd);highlightDir(cmd);}});joystick.on('end',()=>{if(rcOverride)return;lastCmd='S';sendWS('S');highlightDir('S');});}
+function highlightDir(cmd){document.getElementById('cmd-display').textContent=cmd;['F','B','L','R','S'].forEach(direction=>{const el=document.getElementById('ind-'+direction);if(!el)return;el.style.cssText=direction===cmd?'background:#00d4ff22;border-color:#00d4ff;color:#00d4ff;text-shadow:0 0 6px #00d4ff;':'background:#0d1117;border-color:#21262d;color:#8b949e;text-shadow:none;';});}
+function applyRC(active){document.getElementById('joystick-zone').classList.toggle('rc-active',active);document.getElementById('rc-label').classList.toggle('visible',active);if(active&&joystick){joystick.destroy();joystick=null;log(t('rcDisabled'),'err');}else if(!active&&!joystick){const controlPage=document.getElementById('page-control');if(controlPage&&controlPage.style.display&&controlPage.style.display!=='none'){initJoystick();log(t('rcRestored'),'ok');}else{log(t('rcSwitch'),'info');}}}
+const KEY={ArrowUp:'F',w:'F',W:'F',ArrowDown:'B',s:'B',S:'B',ArrowLeft:'L',a:'L',A:'L',ArrowRight:'R',d:'R',D:'R'};document.addEventListener('keydown',event=>{const cmd=KEY[event.key];if(!cmd||rcOverride||!isConnected)return;event.preventDefault();if(cmd!==lastCmd){lastCmd=cmd;sendWS(cmd);highlightDir(cmd);}});document.addEventListener('keyup',event=>{if(!KEY[event.key]||rcOverride||!isConnected)return;lastCmd='S';sendWS('S');highlightDir('S');});
+function setMode(mode){currentMode=mode;highlightModeBtn(mode);sendWS(JSON.stringify({cmd:'set_mode',mode:mode}));log('Mode: '+mode,'info');toast('Mode: '+String(mode).toUpperCase());if(mode!=='manual'&&joystick){joystick.destroy();joystick=null;}else if(mode==='manual'&&!joystick&&!rcOverride){const controlPage=document.getElementById('page-control');if(controlPage&&controlPage.style.display&&controlPage.style.display!=='none')initJoystick();}}
+function highlightModeBtn(mode){const idMap={manual:'manual',autonomous:'auto',ai:'ai'};const active=idMap[mode]||mode;['manual','auto','ai'].forEach(name=>{const btn=document.getElementById('btn-'+name);if(btn)btn.classList.toggle('active',name===active);});}
+window.sendSensorToggle=function(side,active){['tog-','stog-'].forEach(prefix=>{const cb=document.getElementById(prefix+side);if(cb&&cb.checked!==active)cb.checked=active;});sendWS(JSON.stringify({cmd:'sensor_toggle',sensor:SENSOR_MAP[side]||side,active:active}));sendSystemUpdate();toast((side==='imu'?'IMU':side.toUpperCase())+': '+(active?'ON':'OFF'),active?'ok':'info');};window.syncSensorToggle=function(side,active){window.sendSensorToggle(side,active);};function sendSystemUpdate(){const mask=(document.getElementById('tog-front').checked?'1':'0')+(document.getElementById('tog-back').checked?'1':'0')+(document.getElementById('tog-left').checked?'1':'0')+(document.getElementById('tog-right').checked?'1':'0');sendWS(JSON.stringify({event:'config_update',data:{active_model:document.getElementById('cfg-model').value,sensors_mask:mask}}));}
+window.requestAIFrame=function(){sendWS(JSON.stringify({cmd:'request_ai_frame'}));toast(t('frameRequested'),'info');setTimeout(loadStatus,800);};window.sendAICommand=function(){const text=document.getElementById('ai-cmd-input').value.trim();if(!text){toast(t('enterCommand'),'err');return;}sendWS(JSON.stringify({cmd:'ai_command',instruction:text}));log('AI CMD: '+text,'info');toast(t('aiCommandSent'),'ok');};
+window.onModelChange=function(model){updateModelTexts(model);['key-gemini','key-ollama','key-openai','key-anthropic'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('visible');});if(model.startsWith('gemini'))document.getElementById('key-gemini').classList.add('visible');else if(['qwen2.5vl:7b','qwen2.5vl:3b','llava:7b','llava:13b','moondream'].includes(model))document.getElementById('key-ollama').classList.add('visible');else if(model.startsWith('gpt'))document.getElementById('key-openai').classList.add('visible');else if(model.startsWith('claude'))document.getElementById('key-anthropic').classList.add('visible');};
+function loadConfig(){try{const cfg=JSON.parse(localStorage.getItem('smartcar_config')||'{}');if(cfg.apikey)document.getElementById('cfg-apikey').value=cfg.apikey;if(cfg.github_token)document.getElementById('cfg-github-token').value=cfg.github_token;if(cfg.openai_key)document.getElementById('cfg-openai-key').value=cfg.openai_key;if(cfg.anthropic_key)document.getElementById('cfg-anthropic-key').value=cfg.anthropic_key;if(cfg.ollama_host)document.getElementById('cfg-ollama-host').value=cfg.ollama_host;if(cfg.system_prompt)document.getElementById('cfg-system-prompt').value=cfg.system_prompt;if(cfg.model){document.getElementById('cfg-model').value=cfg.model;onModelChange(cfg.model);}else{onModelChange(document.getElementById('cfg-model').value);}if(cfg.interval)document.getElementById('cfg-interval').value=cfg.interval;if(cfg.threshold){document.getElementById('cfg-threshold').value=cfg.threshold;DANGER_CM=parseInt(cfg.threshold,10);}if(cfg.stop_dist){document.getElementById('cfg-stop-dist').value=cfg.stop_dist;STOP_CM=parseInt(cfg.stop_dist,10);}if(cfg.ai_range)document.getElementById('cfg-ai-range').value=cfg.ai_range;updateIntervalText(cfg.interval||'10');refreshThresholdLabels();}catch(_){onModelChange(document.getElementById('cfg-model').value);updateIntervalText('10');refreshThresholdLabels();}}
+window.saveConfig=function(){const cfg={apikey:document.getElementById('cfg-apikey').value,github_token:document.getElementById('cfg-github-token').value,openai_key:document.getElementById('cfg-openai-key').value,anthropic_key:document.getElementById('cfg-anthropic-key').value,ollama_host:document.getElementById('cfg-ollama-host').value,system_prompt:document.getElementById('cfg-system-prompt').value,model:document.getElementById('cfg-model').value,interval:document.getElementById('cfg-interval').value,threshold:document.getElementById('cfg-threshold').value,stop_dist:document.getElementById('cfg-stop-dist').value,ai_range:document.getElementById('cfg-ai-range').value};localStorage.setItem('smartcar_config',JSON.stringify(cfg));DANGER_CM=parseInt(cfg.threshold,10);STOP_CM=parseInt(cfg.stop_dist,10);updateModelTexts(cfg.model);updateIntervalText(cfg.interval);refreshThresholdLabels();toast(t('configSaved'),'ok');log(t('configSaved'),'ok');};
+window.sendConfigTocar=function(){const cfg={cmd:'config',gemini_key:document.getElementById('cfg-apikey').value,openai_key:document.getElementById('cfg-openai-key').value,anthropic_key:document.getElementById('cfg-anthropic-key').value,ollama_host:document.getElementById('cfg-ollama-host').value,github_token:document.getElementById('cfg-github-token').value,system_prompt:document.getElementById('cfg-system-prompt').value,model:document.getElementById('cfg-model').value,interval:parseInt(document.getElementById('cfg-interval').value,10),threshold:parseInt(document.getElementById('cfg-threshold').value,10),stop_dist:parseInt(document.getElementById('cfg-stop-dist').value,10),ai_range:parseInt(document.getElementById('cfg-ai-range').value,10)};sendWS(JSON.stringify(cfg));sendSystemUpdate();toast(t('configPushed'),'ok');};
+window.resetDefaults=function(){['cfg-apikey','cfg-github-token','cfg-openai-key','cfg-anthropic-key','cfg-ollama-host','cfg-system-prompt'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});document.getElementById('cfg-model').value='gemini-2.0-flash';document.getElementById('cfg-interval').value=10;document.getElementById('cfg-threshold').value=30;document.getElementById('cfg-stop-dist').value=20;document.getElementById('cfg-ai-range').value=50;DANGER_CM=30;STOP_CM=20;localStorage.removeItem('smartcar_config');onModelChange('gemini-2.0-flash');updateIntervalText('10');refreshThresholdLabels();toast(t('resetDone'),'info');};
+window.togglePassword=function(id){const input=document.getElementById(id);const eye=document.getElementById(id+'-eye');if(!input||!eye)return;if(input.type==='password'){input.type='text';eye.className='fa-solid fa-eye-slash';}else{input.type='password';eye.className='fa-solid fa-eye';}};
+document.getElementById('lang-select').addEventListener('change',event=>setLanguage(event.target.value));loadConfig();applyLanguage();drawRadar();drawHistory();highlightModeBtn('manual');highlightDir('S');showPage('home');updateClock();window.dispatchEvent(new Event('resize'));
+document.getElementById('ip-input').value=localStorage.getItem(SAVED_WS_IP_KEY)||DEFAULT_WS_IP;
+</script>
+</body>
+</html>
